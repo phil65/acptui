@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         RequestPermissionRequest,
         UpdateSessionNotification,
     )
+    from aclientp.schema.v2.base import JsonValue
 
     from acptui.config import AgentSpec
 
@@ -56,7 +57,7 @@ class QuietEvents:
     def auth_status_update(self, notification: AuthStatusUpdateNotification) -> None:
         pass
 
-    def ext_notification(self, method: str, params: str) -> None:
+    def ext_notification(self, method: str, params: JsonValue) -> None:
         pass
 
     def stderr_line(self, line: str) -> None:

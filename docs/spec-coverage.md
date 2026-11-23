@@ -2,7 +2,7 @@
 
 acptui implements the client side of ACP v2 as defined by the draft schema
 `schema-v2.0.0-beta.3` (pinned and conformance-checked by
-[aclientp](https://github.com/phil65/aclientp) 0.2.3). This page maps every
+[aclientp](https://github.com/phil65/aclientp) 0.3.0). This page maps every
 client-facing item of the spec to the code that handles it and the test that covers
 it. Paths are relative to `src/acptui/`; tests are in `tests/`.
 

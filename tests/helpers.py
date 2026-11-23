@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         RequestPermissionRequest,
         UpdateSessionNotification,
     )
+    from aclientp.schema.v2.base import JsonValue
 
 
 TIMEOUT = 20.0
@@ -54,7 +55,7 @@ class RecordingEvents:
         self.elicitations: list[CreateElicitationRequest] = []
         self.completed: list[str] = []
         self.auth_updates: list[AuthStatusUpdateNotification] = []
-        self.extensions: list[tuple[str, str]] = []
+        self.extensions: list[tuple[str, JsonValue]] = []
         self.form_answer: dict[str, str | int | float | bool | list[str]] = {"name": "acptui"}
 
     def track(self, session_id: str, cwd: str) -> SessionState:
@@ -98,7 +99,7 @@ class RecordingEvents:
     def auth_status_update(self, notification: AuthStatusUpdateNotification) -> None:
         self.auth_updates.append(notification)
 
-    def ext_notification(self, method: str, params: str) -> None:
+    def ext_notification(self, method: str, params: JsonValue) -> None:
         self.extensions.append((method, params))
 
     def stderr_line(self, line: str) -> None:

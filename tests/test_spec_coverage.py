@@ -226,7 +226,7 @@ async def test_extensions_and_command_permission(
     events.answer = "yes"
     state = await run(connection, events, "/command")
 
-    assert events.extensions == [("_demo/hello", '{"greeting": "hi"}')]
+    assert events.extensions == [("_demo/hello", {"greeting": "hi"})]
     subject = events.permissions[-1].subject
     assert isinstance(subject, CommandPermissionSubject)
     assert subject.command == "rm -rf build"

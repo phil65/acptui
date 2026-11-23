@@ -14,11 +14,10 @@ import os
 from typing import TYPE_CHECKING, Protocol, Self
 import uuid
 
-from aclientp.exceptions import ProtocolVersionError, RequestError
+from aclientp.exceptions import InvalidResponseError, ProtocolVersionError, RequestError
 from aclientp.schema.v2 import (
     AgentCapabilities,
     ArchiveSessionRequest,
-    AuthMethod,
     AuthStatusRequest,
     AuthStatusResponse,
     CancelSessionNotification,
@@ -73,13 +72,13 @@ from aclientp.schema.v2 import (
     TextContent,
     UnarchiveSessionRequest,
     UpdateSessionNotification,
+    supports,
 )
-from aclientp.schema.v2.base import is_set
+from aclientp.schema.v2.base import JsonValue, is_set
 from aclientp.transports import spawn_stdio_transport
 from aclientp.v2.client import Client, ClientSideConnection
 from aclientp.ws_transport import connect_remote_transport
 import anyio
-from pydantic import ValidationError
 
 import acptui
 
@@ -90,6 +89,7 @@ if TYPE_CHECKING:
 
     from aclientp.connection import StreamEvent
     from aclientp.schema.v2 import (
+        AuthMethod,
         AuthStatusUpdateNotification,
         CompleteElicitationNotification,
         ContentBlock,
@@ -97,8 +97,6 @@ if TYPE_CHECKING:
         CreateElicitationResponse,
         InitialSessionConfigOption,
         McpServer,
-        PromptCapabilities,
-        SessionCapabilities,
     )
     from anyio.abc import ByteReceiveStream, ByteSendStream, Process
 
@@ -151,8 +149,8 @@ class AgentEvents(Protocol):
         """The agent's authentication status changed."""
         ...
 
-    def ext_notification(self, method: str, params: str) -> None:
-        """A custom (``_``-prefixed) notification, with its params as JSON text."""
+    def ext_notification(self, method: str, params: JsonValue) -> None:
+        """A custom (``_``-prefixed) notification."""
         ...
 
     def stderr_line(self, line: str) -> None:
@@ -223,8 +221,8 @@ class _ClientHandler(Client):
     async def auth_status_update(self, params: AuthStatusUpdateNotification) -> None:
         self._events.auth_status_update(params)
 
-    async def ext_notification(self, method: str, params: object) -> None:
-        self._events.ext_notification(method, json.dumps(params, ensure_ascii=False, default=str))
+    async def ext_notification(self, method: str, params: JsonValue) -> None:
+        self._events.ext_notification(method, params)
 
     # ext_method (custom requests) and mcp/message keep the base behavior: -32601.
     # acptui hosts no ACP-transport MCP servers, so agents have no reason to send
@@ -321,6 +319,14 @@ class AgentConnection:
                 "It may not speak ACP on stdio, or it waits for a login (see the log: ctrl+l)."
             )
             raise AgentError(msg) from exc
+        except InvalidResponseError as exc:
+            # Claims v2, but the response does not have the v2 shape (e.g. an agent
+            # echoing the requested version with a v1 response).
+            msg = (
+                f"{self.spec.name} answered `initialize` with an invalid ACP v2 response "
+                f"({len(exc.errors)} errors). It probably only speaks ACP v1."
+            )
+            raise AgentError(msg) from exc
         except RequestError as exc:
             if exc.code == -32022:  # noqa: PLR2004
                 raise UnsupportedProtocolError(self.spec.name, exc.data) from exc
@@ -331,14 +337,6 @@ class AgentConnection:
             raise AgentError(msg) from exc
         except ConnectionError as exc:
             msg = f"{self.spec.name} exited during startup{self._exit_suffix()}."
-            raise AgentError(msg) from exc
-        except ValidationError as exc:
-            # Claims v2, but the response does not have the v2 shape (e.g. an agent
-            # echoing the requested version with a v1 response).
-            msg = (
-                f"{self.spec.name} answered `initialize` with an invalid ACP v2 response "
-                f"({exc.error_count()} errors). It probably only speaks ACP v1."
-            )
             raise AgentError(msg) from exc
 
     def _exit_suffix(self) -> str:
@@ -401,125 +399,90 @@ class AgentConnection:
         return AgentCapabilities()
 
     @property
-    def session_capabilities(self) -> SessionCapabilities | None:
-        """The agent's session capabilities, if it has any."""
-        session = self.capabilities.session
-        return session if is_set(session) else None
-
-    @property
-    def prompt_capabilities(self) -> PromptCapabilities | None:
-        """What the agent accepts in prompts beyond text and resource links."""
-        session = self.session_capabilities
-        if session is None or not is_set(session.prompt) or session.prompt is None:
-            return None
-        return session.prompt
-
-    @property
-    def supports_images(self) -> bool:
-        """Whether prompts may contain images."""
-        prompt = self.prompt_capabilities
-        return prompt is not None and is_set(prompt.image) and prompt.image is not None
-
-    @property
-    def supports_audio(self) -> bool:
-        """Whether prompts may contain audio."""
-        prompt = self.prompt_capabilities
-        return prompt is not None and is_set(prompt.audio) and prompt.audio is not None
-
-    @property
-    def supports_embedded_context(self) -> bool:
-        """Whether prompts may embed resource contents."""
-        prompt = self.prompt_capabilities
-        return (
-            prompt is not None
-            and is_set(prompt.embedded_context)
-            and prompt.embedded_context is not None
-        )
-
-    @property
-    def supports_skills(self) -> bool:
-        """Whether prompts may contain ``skill`` blocks."""
-        prompt = self.prompt_capabilities
-        return prompt is not None and is_set(prompt.skill) and prompt.skill is not None
-
-    @property
     def auth_methods(self) -> Sequence[AuthMethod]:
         """Authentication methods the agent offers."""
         if self.init is not None and is_set(self.init.auth_methods):
             return self.init.auth_methods
         return ()
 
-    def _has(self, value: object) -> bool:
-        """Whether a capability marker is present (``{}``), not omitted or ``null``."""
-        return is_set(value) and value is not None
+    def supports(self, path: str) -> bool:
+        """Whether the agent has a capability, by its dotted wire path (``session.fork``)."""
+        return self.init is not None and supports(self.init.capabilities, path)
+
+    @property
+    def supports_images(self) -> bool:
+        """Whether prompts may contain images."""
+        return self.supports("session.prompt.image")
+
+    @property
+    def supports_audio(self) -> bool:
+        """Whether prompts may contain audio."""
+        return self.supports("session.prompt.audio")
+
+    @property
+    def supports_embedded_context(self) -> bool:
+        """Whether prompts may embed resource contents."""
+        return self.supports("session.prompt.embeddedContext")
+
+    @property
+    def supports_skills(self) -> bool:
+        """Whether prompts may contain ``skill`` blocks."""
+        return self.supports("session.prompt.skill")
 
     @property
     def supports_additional_directories(self) -> bool:
         """``additionalDirectories`` on session setup."""
-        session = self.session_capabilities
-        return session is not None and self._has(session.additional_directories)
+        return self.supports("session.additionalDirectories")
 
     @property
     def supports_system_prompt(self) -> bool:
         """``systemPrompt`` on session setup."""
-        session = self.session_capabilities
-        return session is not None and self._has(session.system_prompt)
+        return self.supports("session.systemPrompt")
 
     @property
     def supports_system_prompt_override(self) -> bool:
         """The ``override`` system prompt mode."""
-        session = self.session_capabilities
-        if session is None or not self._has(session.system_prompt):
-            return False
-        prompt = session.system_prompt
-        if prompt is None or not is_set(prompt) or not is_set(prompt.mode) or prompt.mode is None:
-            return False
-        return self._has(prompt.mode.override)
-
-    def _session_flag(self, name: str) -> bool:
-        session = self.session_capabilities
-        return session is not None and self._has(getattr(session, name, None))
+        return self.supports("session.systemPrompt.mode.override")
 
     @property
     def supports_delete(self) -> bool:
         """``session/delete``."""
-        return self._session_flag("delete")
+        return self.supports("session.delete")
 
     @property
     def supports_fork(self) -> bool:
         """``session/fork``."""
-        return self._session_flag("fork")
+        return self.supports("session.fork")
 
     @property
     def supports_archive(self) -> bool:
         """``session/archive`` and ``session/unarchive``."""
-        return self._session_flag("archive")
+        return self.supports("session.archive")
 
     @property
     def supports_status(self) -> bool:
         """``session/status``."""
-        return self._session_flag("status")
+        return self.supports("session.status")
 
     @property
     def supports_options(self) -> bool:
         """``session/options``."""
-        return self._session_flag("options")
+        return self.supports("session.options")
 
     @property
     def supports_title(self) -> bool:
         """``session/set_title``."""
-        return self._session_flag("title")
+        return self.supports("session.title")
 
     @property
     def supports_auth_status(self) -> bool:
         """``auth/status`` (and ``auth/status_update``)."""
-        auth = self.capabilities.auth
-        return auth is not None and is_set(auth) and self._has(auth.status)
+        return self.supports("auth.status")
 
     @property
     def supports_providers(self) -> bool:
         """``providers/list``, ``providers/set`` and ``providers/disable``."""
-        return self._has(self.capabilities.providers)
+        return self.supports("providers")
 
     @property
     def supports_login(self) -> bool:
@@ -528,15 +491,7 @@ class AgentConnection:
 
     def mcp_transports(self) -> set[str]:
         """MCP transports the agent accepts on session setup."""
-        session = self.session_capabilities
-        if session is None or not is_set(session.mcp) or session.mcp is None:
-            return set()
-        mcp = session.mcp
-        return {
-            name
-            for name, marker in (("stdio", mcp.stdio), ("http", mcp.http), ("acp", mcp.acp))
-            if self._has(marker)
-        }
+        return {name for name in ("stdio", "http", "acp") if self.supports(f"session.mcp.{name}")}
 
     # --- Calls -----------------------------------------------------------------------
 

@@ -8,6 +8,7 @@ session, or one of its subagent sessions).
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from typing import TYPE_CHECKING, ClassVar
 
@@ -71,6 +72,7 @@ if TYPE_CHECKING:
         UpdateSessionNotification,
     )
     from aclientp.schema.v2.auth import AuthAccount
+    from aclientp.schema.v2.base import JsonValue
     from textual.app import ComposeResult
     from textual.screen import ModalScreen
     from textual.widget import Widget
@@ -489,8 +491,9 @@ class SessionScreen(Screen[None]):
         accounts = notification.accounts if is_set(notification.accounts) else []
         self._show_auth(notification.state, accounts)
 
-    def ext_notification(self, method: str, params: str) -> None:
-        self.agent_log.add("info", f"extension notification {method}: {params}")
+    def ext_notification(self, method: str, params: JsonValue) -> None:
+        text = json.dumps(params, ensure_ascii=False)
+        self.agent_log.add("info", f"extension notification {method}: {text}")
 
     def stderr_line(self, line: str) -> None:
         self.agent_log.add("stderr", line)
