@@ -1,0 +1,293 @@
+"""Small modal dialogs: session list, config options, choices, help."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, ClassVar
+
+from aclientp.exceptions import RequestError
+from aclientp.schema.v2 import (
+    BooleanSessionConfigOption,
+    SelectSessionConfigOption,
+    SessionConfigSelectGroup,
+    SessionConfigSelectOption,
+)
+from aclientp.schema.v2.base import is_set
+from textual import work
+from textual.binding import Binding
+from textual.containers import Vertical
+from textual.content import Content
+from textual.screen import ModalScreen
+from textual.widgets import Markdown, OptionList, Static
+from textual.widgets.option_list import Option
+
+
+if TYPE_CHECKING:
+    from aclientp.schema.v2 import SessionConfigOption, SessionInfo
+    from textual.app import ComposeResult
+
+    from acptui.protocol.connection import AgentConnection
+
+
+DIALOG_CSS = """
+    align: center middle;
+    #dialog {
+        width: 90%;
+        max-width: 100;
+        height: auto;
+        max-height: 85%;
+        border: thick $primary;
+        background: $surface;
+        padding: 0 1;
+    }
+    #dialog-title { text-style: bold; color: $accent; margin: 0 0 1 0; }
+    #dialog-hint { color: $text-muted; }
+    OptionList { height: auto; max-height: 20; border: none; }
+"""
+
+
+class SessionListScreen(ModalScreen[str | None]):
+    """Lists the agent's sessions for the working directory; returns the chosen ID."""
+
+    DEFAULT_CSS = "SessionListScreen {" + DIALOG_CSS + "}"
+    BINDINGS: ClassVar = [Binding("escape", "dismiss_none", "Close")]
+
+    def __init__(self, connection: AgentConnection) -> None:
+        super().__init__()
+        self.connection = connection
+        self._cursor: str | None = None
+        self.sessions: list[SessionInfo] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Static("Resume a session", id="dialog-title")
+            yield OptionList(id="sessions")
+            yield Static("Loading…", id="dialog-hint")
+
+    def on_mount(self) -> None:
+        self.load()
+
+    @work(exclusive=True)
+    async def load(self) -> None:
+        """Load (the next page of) sessions."""
+        hint = self.query_one("#dialog-hint", Static)
+        try:
+            response = await self.connection.list_sessions(self._cursor)
+        except (RequestError, ConnectionError) as exc:
+            hint.update(Content(f"The agent cannot list sessions: {exc}"))
+            return
+        options = self.query_one("#sessions", OptionList)
+        if (
+            options.option_count
+            and options.get_option_at_index(options.option_count - 1).id == "more"
+        ):
+            options.remove_option("more")
+        for info in response.sessions:
+            self.sessions.append(info)
+            title = info.title if is_set(info.title) and info.title else info.session_id
+            updated = info.updated_at if is_set(info.updated_at) and info.updated_at else ""
+            label = Content.assemble(
+                (title, "bold"), ("\n  " + updated[:19].replace("T", " "), "$text-muted")
+            )
+            options.add_option(Option(label, id=f"s:{info.session_id}"))
+        cursor = response.next_cursor if is_set(response.next_cursor) else None
+        self._cursor = cursor
+        if cursor is not None and response.sessions:
+            options.add_option(Option(Content("… load more").stylize("$text-muted"), id="more"))
+        hint.update(
+            "enter: resume · escape: close" if self.sessions else "No sessions for this directory."
+        )
+        if options.highlighted is None and options.option_count:
+            options.highlighted = 0
+        options.focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        option_id = event.option_id or ""
+        if option_id == "more":
+            self.load()
+        elif option_id.startswith("s:"):
+            self.dismiss(option_id[2:])
+
+    def action_dismiss_none(self) -> None:
+        """Close without choosing."""
+        self.dismiss(None)
+
+
+def _select_values(option: SelectSessionConfigOption) -> list[tuple[str, str, str]]:
+    """``(value, name, group)`` of a select option's values."""
+    values: list[tuple[str, str, str]] = []
+    for item in option.options:
+        if isinstance(item, SessionConfigSelectGroup):
+            values.extend((v.value, v.name, item.name) for v in item.options)
+        elif isinstance(item, SessionConfigSelectOption):
+            values.append((item.value, item.name, ""))
+    return values
+
+
+def option_value_label(option: SessionConfigOption) -> str:
+    """The display name of an option's current value."""
+    match option:
+        case SelectSessionConfigOption():
+            return next(
+                (
+                    name
+                    for value, name, _ in _select_values(option)
+                    if value == option.current_value
+                ),
+                option.current_value,
+            )
+        case BooleanSessionConfigOption():
+            return "on" if option.current_value else "off"
+        case _:
+            return "?"
+
+
+def next_select_value(option: SelectSessionConfigOption) -> str:
+    """The value after the current one (wrapping around)."""
+    values = [value for value, _, _ in _select_values(option)]
+    if option.current_value not in values:
+        return values[0]
+    return values[(values.index(option.current_value) + 1) % len(values)]
+
+
+ConfigChoice = tuple[str, str | bool]
+"""``(config_id, value)`` chosen in the config dialog."""
+
+
+class ConfigScreen(ModalScreen[ConfigChoice | None]):
+    """Session options (mode, model, ...) as the agent exposes them; returns a new value."""
+
+    DEFAULT_CSS = "ConfigScreen {" + DIALOG_CSS + "}"
+    BINDINGS: ClassVar = [Binding("escape", "back", "Back")]
+
+    def __init__(self, options: list[SessionConfigOption]) -> None:
+        super().__init__()
+        self.options = options
+        self.current: SelectSessionConfigOption | None = None
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Static("Session options", id="dialog-title")
+            yield OptionList(id="config")
+            yield Static("enter: change · escape: close", id="dialog-hint")
+
+    def on_mount(self) -> None:
+        self._show_options()
+
+    def _show_options(self) -> None:
+        self.current = None
+        self.query_one("#dialog-title", Static).update("Session options")
+        options = self.query_one("#config", OptionList)
+        options.clear_options()
+        if not self.options:
+            self.query_one("#dialog-hint", Static).update(
+                "The agent offers no options for this session."
+            )
+        for index, option in enumerate(self.options):
+            category = option.category if is_set(option.category) and option.category else ""
+            label = Content.assemble(
+                (option.name, "bold"),
+                ": ",
+                (option_value_label(option), "$text-accent"),
+                (f"  ({category})" if category else "", "$text-muted"),
+            )
+            options.add_option(Option(label, id=f"o:{index}"))
+        if self.options:
+            options.highlighted = 0
+        options.focus()
+
+    def _show_values(self, option: SelectSessionConfigOption) -> None:
+        self.current = option
+        self.query_one("#dialog-title", Static).update(Content(option.name))
+        options = self.query_one("#config", OptionList)
+        options.clear_options()
+        group = None
+        highlight = 0
+        for index, (value, name, group_name) in enumerate(_select_values(option)):
+            if group_name and group_name != group:
+                group = group_name
+                options.add_option(
+                    Option(Content(group_name).stylize("bold $text-muted"), disabled=True)
+                )
+            marker = "● " if value == option.current_value else "  "
+            options.add_option(Option(Content(marker + name), id=f"v:{index}"))
+            if value == option.current_value:
+                highlight = options.option_count - 1
+        options.highlighted = highlight
+        options.focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        option_id = event.option_id or ""
+        if option_id.startswith("o:"):
+            option = self.options[int(option_id[2:])]
+            if isinstance(option, SelectSessionConfigOption):
+                self._show_values(option)
+            elif isinstance(option, BooleanSessionConfigOption):
+                self.dismiss((option.config_id, not option.current_value))
+        elif option_id.startswith("v:") and self.current is not None:
+            value = _select_values(self.current)[int(option_id[2:])][0]
+            self.dismiss((self.current.config_id, value))
+
+    def action_back(self) -> None:
+        """Back to the option list, or close."""
+        if self.current is not None:
+            self._show_options()
+        else:
+            self.dismiss(None)
+
+
+HELP = """\
+# acptui
+
+A terminal UI for AI coding agents speaking **ACP v2**.
+
+## Keys
+
+| Key | Action |
+| --- | --- |
+| `enter` | Send the prompt (or accept a completion) |
+| `shift+enter`, `ctrl+j` | New line in the prompt |
+| `/` at the start | Complete the agent's commands |
+| `@` | Complete a file path (attached to the prompt) |
+| `up` / `down` | Prompt history |
+| `escape` | Cancel the running turn |
+| `shift+tab` | Next mode (if the agent has a mode option) |
+| `ctrl+o` | Session options: mode, model, ... |
+| `ctrl+n` | New session |
+| `ctrl+r` | Resume a session |
+| `ctrl+d` | Diff view: unified / split / auto |
+| `ctrl+l` | Agent log (stderr and protocol traffic) |
+| `tab` | Focus the conversation; `enter` on a tool call toggles it, `x` cancels it |
+| `pageup` / `pagedown` | Scroll the conversation |
+| `ctrl+p` | Command palette |
+| `f5` | Restart the agent |
+| `ctrl+q` | Quit |
+
+## Permission dialog
+
+Number keys pick an option, `y` allows, `n` or `escape` rejects.
+
+## Files
+
+`@path` mentions are attached to the prompt: small text files are embedded if the
+agent accepts embedded context, images are attached if it accepts images, anything
+else is sent as a link.
+"""
+
+
+class HelpScreen(ModalScreen[None]):
+    """Keys and tips."""
+
+    DEFAULT_CSS = (
+        "HelpScreen {"
+        + DIALOG_CSS
+        + " #dialog { max-width: 90; } Markdown { height: auto; max-height: 40; margin: 0; } }"
+    )
+    BINDINGS: ClassVar = [Binding("escape,f1,q", "dismiss_help", "Close")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Markdown(HELP)
+
+    def action_dismiss_help(self) -> None:
+        """Close."""
+        self.dismiss(None)

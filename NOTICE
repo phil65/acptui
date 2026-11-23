@@ -1,0 +1,15 @@
+acptui
+Copyright (c) 2026 Philipp Temminghoff
+Licensed under the GNU Affero General Public License v3.0 or later (see LICENSE).
+
+This project contains code adapted from toad
+(https://github.com/batrachianai/toad), Copyright (c) Will McGugan,
+licensed under the GNU Affero General Public License v3.0:
+
+- src/acptui/ui/render.py: `pill()` (from toad's src/toad/pill.py)
+- src/acptui/ui/widgets/blocks.py: `PlanView` (status icons and priority pills,
+  after toad's src/toad/widgets/plan.py) and the tool output heuristic in
+  `_text_widget` (ANSI / Markdown / plain text, after toad's
+  src/toad/widgets/tool_call.py)
+
+The protocol layer (ACP v2 via aclientp) and the other widgets are new code.
