@@ -8,6 +8,8 @@ from aclientp.exceptions import RequestError
 from aclientp.schema.v2 import (
     AgentMessageCursorAnchor,
     AgentThoughtCursorAnchor,
+    AuthMethodAgent,
+    AuthMethodTerminal,
     BooleanSessionConfigOption,
     CursorCompactionAnchor,
     CursorToolCallAnchor,
@@ -27,10 +29,13 @@ from textual.widgets import Input, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
 
 from acptui.protocol.state import MessageEntry
+from acptui.ui.markdown import AgentMarkdown, summary_markdown
 
 
 if TYPE_CHECKING:
-    from aclientp.schema.v2 import SessionConfigOption, SessionInfo
+    from collections.abc import Sequence
+
+    from aclientp.schema.v2 import AuthMethod, SessionConfigOption, SessionInfo
     from textual.app import ComposeResult
 
     from acptui.protocol.connection import AgentConnection
@@ -336,6 +341,25 @@ def _select_values(option: SelectSessionConfigOption) -> list[tuple[str, str, st
     return values
 
 
+def _value_descriptions(option: SelectSessionConfigOption) -> list[str]:
+    """The (Markdown) descriptions of a select option's values, in ``_select_values`` order."""
+    items: list[SessionConfigSelectOption] = []
+    for item in option.options:
+        if isinstance(item, SessionConfigSelectGroup):
+            items.extend(item.options)
+        elif isinstance(item, SessionConfigSelectOption):
+            items.append(item)
+    return [v.description if is_set(v.description) and v.description else "" for v in items]
+
+
+def _described(label: Content, description: str) -> Content:
+    """An option list entry: the label, then the description's first paragraph (Markdown)."""
+    if not description:
+        return label
+    summary = summary_markdown(description).stylize_before("$text-muted")
+    return Content.assemble(label, "\n  ", summary)
+
+
 def option_value_label(option: SessionConfigOption) -> str:
     """The display name of an option's current value."""
     match option:
@@ -367,21 +391,41 @@ ConfigChoice = tuple[str, str | bool]
 
 
 class ConfigScreen(ModalScreen[ConfigChoice | None]):
-    """Session options (mode, model, ...) as the agent exposes them; returns a new value."""
+    """Session options (mode, model, ...) as the agent exposes them; returns a new value.
 
-    DEFAULT_CSS = "ConfigScreen {" + DIALOG_CSS + "}"
+    Descriptions of options and values are Markdown (ACP v2): the list shows their first
+    paragraph, the panel below the whole description of the highlighted entry.
+    """
+
+    DEFAULT_CSS = (
+        "ConfigScreen {"
+        + DIALOG_CSS
+        + """ #config-description {
+            height: auto; max-height: 10; margin: 1 0 0 0; padding: 0;
+            background: transparent; color: $text-muted;
+        } }"""
+    )
     BINDINGS: ClassVar = [Binding("escape", "back", "Back")]
 
     def __init__(self, options: list[SessionConfigOption]) -> None:
         super().__init__()
         self.options = options
         self.current: SelectSessionConfigOption | None = None
+        self.descriptions: dict[str, str] = {}
+        """Option list id -> Markdown description."""
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
             yield Static("Session options", id="dialog-title")
             yield OptionList(id="config")
+            yield AgentMarkdown(id="config-description")
             yield Static("enter: change · escape: close", id="dialog-hint")
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        description = self.descriptions.get(event.option_id or "", "")
+        panel = self.query_one("#config-description", AgentMarkdown)
+        panel.display = bool(description)
+        panel.update(description)
 
     def on_mount(self) -> None:
         self._show_options()
@@ -391,6 +435,7 @@ class ConfigScreen(ModalScreen[ConfigChoice | None]):
         self.query_one("#dialog-title", Static).update("Session options")
         options = self.query_one("#config", OptionList)
         options.clear_options()
+        self.descriptions.clear()
         if not self.options:
             self.query_one("#dialog-hint", Static).update(
                 "The agent offers no options for this session."
@@ -403,7 +448,9 @@ class ConfigScreen(ModalScreen[ConfigChoice | None]):
                 (option_value_label(option), "$text-accent"),
                 (f"  ({category})" if category else "", "$text-muted"),
             )
-            options.add_option(Option(label, id=f"o:{index}"))
+            description = option.description if is_set(option.description) else None
+            self.descriptions[f"o:{index}"] = description or ""
+            options.add_option(Option(_described(label, description or ""), id=f"o:{index}"))
         if self.options:
             options.highlighted = 0
         options.focus()
@@ -413,6 +460,8 @@ class ConfigScreen(ModalScreen[ConfigChoice | None]):
         self.query_one("#dialog-title", Static).update(Content(option.name))
         options = self.query_one("#config", OptionList)
         options.clear_options()
+        self.descriptions.clear()
+        descriptions = _value_descriptions(option)
         group = None
         highlight = 0
         for index, (value, name, group_name) in enumerate(_select_values(option)):
@@ -422,7 +471,10 @@ class ConfigScreen(ModalScreen[ConfigChoice | None]):
                     Option(Content(group_name).stylize("bold $text-muted"), disabled=True)
                 )
             marker = "● " if value == option.current_value else "  "
-            options.add_option(Option(Content(marker + name), id=f"v:{index}"))
+            self.descriptions[f"v:{index}"] = descriptions[index]
+            options.add_option(
+                Option(_described(Content(marker + name), descriptions[index]), id=f"v:{index}")
+            )
             if value == option.current_value:
                 highlight = options.option_count - 1
         options.highlighted = highlight
@@ -446,6 +498,80 @@ class ConfigScreen(ModalScreen[ConfigChoice | None]):
             self._show_options()
         else:
             self.dismiss(None)
+
+
+def method_description(method: AuthMethod) -> str:
+    """An auth method's description (Markdown in ACP v2), or ``""``."""
+    if isinstance(method, AuthMethodAgent | AuthMethodTerminal) and is_set(method.description):
+        return method.description or ""
+    return ""
+
+
+class LoginScreen(ModalScreen[str | None]):
+    """The agent's login methods with their (Markdown) descriptions; returns a method id.
+
+    Methods acptui cannot run (unknown types) are listed but disabled.
+    """
+
+    DEFAULT_CSS = (
+        "LoginScreen {"
+        + DIALOG_CSS
+        + """ #login-description {
+            height: auto; max-height: 12; margin: 1 0 0 0; padding: 0; background: transparent;
+        } }"""
+    )
+    BINDINGS: ClassVar = [Binding("escape", "dismiss_none", "Close")]
+
+    def __init__(self, agent_name: str, methods: Sequence[AuthMethod]) -> None:
+        super().__init__()
+        self.agent_name = agent_name
+        self.methods = list(methods)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Static(Content(f"Log in to {self.agent_name}"), id="dialog-title")
+            options: list[Option] = []
+            for index, method in enumerate(self.methods):
+                runnable = isinstance(method, AuthMethodAgent | AuthMethodTerminal)
+                kind = (
+                    "in a terminal"
+                    if isinstance(method, AuthMethodTerminal)
+                    else "via the agent"
+                    if runnable
+                    else f"unsupported: {method.type}"
+                )
+                label = Content.assemble((method.name, "bold"), (f"  ({kind})", "$text-muted"))
+                options.append(
+                    Option(
+                        _described(label, method_description(method)),
+                        id=f"m:{index}",
+                        disabled=not runnable,
+                    )
+                )
+            yield OptionList(*options, id="methods")
+            yield AgentMarkdown(id="login-description")
+            yield Static("enter: log in · escape: close", id="dialog-hint")
+
+    def on_mount(self) -> None:
+        options = self.query_one(OptionList)
+        options.focus()
+        if self.methods:
+            options.highlighted = 0
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        index = int((event.option_id or "m:0")[2:])
+        description = method_description(self.methods[index]) if self.methods else ""
+        panel = self.query_one("#login-description", AgentMarkdown)
+        panel.display = bool(description)
+        panel.update(description)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        index = int((event.option_id or "m:0")[2:])
+        self.dismiss(self.methods[index].method_id)
+
+    def action_dismiss_none(self) -> None:
+        """Close."""
+        self.dismiss(None)
 
 
 HELP = """\

@@ -126,6 +126,26 @@ Abbreviations: `conn` = `protocol/connection.py` (`AgentConnection`), `state` =
 | Unknown | `[type]` | — | SC `test_every_content_block_kind` |
 | `annotations.audience` | Blocks only for the assistant are hidden | — | SC `test_every_content_block_kind` |
 
+## Plain text and Markdown
+
+v2 display strings are plain text unless the spec says Markdown. acptui renders the
+Markdown fields with `AgentMarkdown` (a document) or `inline_markdown` (one-line places:
+lists, completions, the palette) from `ui/markdown.py`, and escapes plain fields where it
+builds Markdown itself (`protocol/content.escape_markdown`). Raw HTML in agent Markdown
+is shown as text, not interpreted; links open only on click: `http(s)` directly (the
+full target is shown), anything else after a confirmation. Tests: `test_markdown.py`.
+
+| Field | Rendered as | Where |
+| --- | --- | --- |
+| `text` content blocks | Markdown | messages, thoughts, tool output |
+| Plan entry `content`, Markdown plan `content` | inline Markdown / Markdown | `PlanView` |
+| Auth method `description` | inline Markdown, Markdown | auth-required panel, palette, `LoginScreen` |
+| Command and skill `description` | inline Markdown (first line) | `/` completion |
+| Config option and select value `description` | inline Markdown, Markdown for the highlighted one | `ConfigScreen` |
+| Permission request `description` | Markdown | `PermissionScreen` |
+| Subagent `description` | Markdown | `SubagentView` |
+| Tool call and session titles, names, labels, hints, notices, resource link name and description, elicitation texts, auth account labels, error messages | plain text (escaped in generated Markdown and in palette markup) | everywhere |
+
 ## Not applicable to a TUI client
 
 | Spec item | Why |

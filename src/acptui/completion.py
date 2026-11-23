@@ -58,6 +58,9 @@ class Completion:
     detail: str = ""
     """Description shown next to the label."""
 
+    markdown: bool = False
+    """Whether ``detail`` is Markdown (command and skill descriptions are, in ACP v2)."""
+
 
 def completion_context(line: str, row: int) -> CompletionContext | None:
     """The completion context for the text before the cursor in line ``row``."""
@@ -89,7 +92,7 @@ def complete_command(prefix: str, commands: Sequence[AvailableCommand]) -> list[
             hint = f" <{command.input.hint}>"
         kind = " (skill)" if isinstance(command, Skill) else ""
         summary = first_line(command.description)
-        completion = Completion(f"/{name}{hint}", f"{name} ", f"{summary}{kind}")
+        completion = Completion(f"/{name}{hint}", f"{name} ", f"{summary}{kind}", markdown=True)
         if name.lower().startswith(lowered):
             starts.append(completion)
         elif lowered in name.lower():

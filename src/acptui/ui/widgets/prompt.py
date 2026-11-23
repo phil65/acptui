@@ -11,6 +11,7 @@ from textual.widgets import OptionList, TextArea
 from textual.widgets.option_list import Option
 
 from acptui.completion import Completion, complete_command, complete_path, completion_context
+from acptui.ui.markdown import summary_markdown
 
 
 if TYPE_CHECKING:
@@ -20,6 +21,16 @@ if TYPE_CHECKING:
     from textual.events import Key
 
     from acptui.completion import CompletionContext
+
+
+def completion_prompt(completion: Completion) -> Content:
+    """The list entry of a candidate: its label and its (Markdown or plain) detail."""
+    if not completion.detail:
+        return Content(completion.label).stylize("bold")
+    detail = (
+        summary_markdown(completion.detail) if completion.markdown else Content(completion.detail)
+    )
+    return Content.assemble((completion.label, "bold"), "  ", detail.stylize_before("$text-muted"))
 
 
 class CompletionList(OptionList):
@@ -46,14 +57,7 @@ class CompletionList(OptionList):
         """Show candidates (or hide when there are none)."""
         self.completions = completions
         self.clear_options()
-        self.add_options(
-            Option(
-                Content.assemble(
-                    (c.label, "bold"), ("  " + c.detail if c.detail else "", "$text-muted")
-                )
-            )
-            for c in completions
-        )
+        self.add_options(Option(completion_prompt(c)) for c in completions)
         self.set_class(bool(completions), "-visible")
         if completions:
             self.highlighted = 0

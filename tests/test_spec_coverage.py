@@ -144,7 +144,7 @@ async def test_subagent_sessions_and_session_messages(
     (child,) = state.subagents.values()
     assert isinstance(state.entries[1], SubagentEntry)
     assert child.title == "Researcher"
-    assert child.description == "Looks things up for the main agent"
+    assert child.description == "Looks things up for the **main** agent"
     assert child.activity == "idle"
     assert not child.can_cancel  # cleared when it finished
     child_state = events.states[child.session_id]

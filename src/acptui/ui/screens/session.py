@@ -42,12 +42,15 @@ from acptui.protocol.content import content_markdown
 from acptui.protocol.prompt import PromptOptions, build_prompt, shell_block
 from acptui.protocol.state import EntryAdded, EntryChanged, MessageEntry, SessionState, ShellEntry
 from acptui.shell import open_shell
+from acptui.ui.markdown import inline_markdown
 from acptui.ui.screens.dialogs import (
     ConfigScreen,
     ForkScreen,
     HelpScreen,
+    LoginScreen,
     SessionListScreen,
     TextInputScreen,
+    method_description,
     next_select_value,
 )
 from acptui.ui.screens.elicitation import FormElicitationScreen, UrlElicitationScreen
@@ -405,17 +408,22 @@ class SessionScreen(Screen[None]):
     def _session_error(self, exc: RequestError) -> None:
         connection = self._connection()
         if exc.code == -32000:  # noqa: PLR2004 - authentication required
-            methods = "\n".join(
-                f"  • {m.name}"
-                + (
-                    " (ctrl+p → Log in)"
-                    if isinstance(m, AuthMethodAgent | AuthMethodTerminal)
-                    else ""
-                )
-                for m in connection.auth_methods
+            lines: list[Content] = []
+            for method in connection.auth_methods:
+                runnable = isinstance(method, AuthMethodAgent | AuthMethodTerminal)
+                line = Content.assemble("  • ", (method.name, "bold"))
+                if description := method_description(method):  # Markdown (ACP v2)
+                    line = Content.assemble(line, " — ", inline_markdown(description))
+                lines.append(line)
+                if not runnable:
+                    lines[-1] = Content.assemble(lines[-1], (" (unsupported)", "$text-muted"))
+            methods = (
+                Content("\n").join(lines) if lines else Content("  (it offers no login methods)")
             )
-            methods = methods or "  (it offers no login methods)"
-            text = f"{connection.agent_name} needs you to log in.\n{methods}"
+            hint = "\nctrl+p → Log in" if connection.auth_methods else ""
+            text = Content.assemble(
+                f"{connection.agent_name} needs you to log in.\n", methods, hint
+            )
             self._fatal(text, title="Authentication required", show_stderr=False, fatal=False)
         else:
             self._fatal(
@@ -464,9 +472,9 @@ class SessionScreen(Screen[None]):
         self.prompt.set_class(not self.connected, "-disabled")
 
     def _fatal(
-        self, message: str, *, title: str, show_stderr: bool = True, fatal: bool = True
+        self, message: str | Content, *, title: str, show_stderr: bool = True, fatal: bool = True
     ) -> None:
-        text = Content(message)
+        text = Content(message) if isinstance(message, str) else message
         if show_stderr and (tail := self.agent_log.tail("stderr", STDERR_TAIL)):
             text = Content.assemble(
                 text, ("\n\nLast stderr lines:\n", "bold"), ("\n".join(tail), "$text-muted")
@@ -474,7 +482,7 @@ class SessionScreen(Screen[None]):
         hint = "\n\nf5: restart · ctrl+l: log · ctrl+q: quit" if fatal else "\n\nctrl+l: log"
         panel = ErrorPanel(Content.assemble(text, (hint, "$text-muted italic")))
         panel.border_title = title
-        self.agent_log.add("error", f"{title}: {message}")
+        self.agent_log.add("error", f"{title}: {text.plain}")
         self.conversation.mount(panel)
 
     # --- AgentEvents ----------------------------------------------------------------
@@ -975,6 +983,21 @@ class SessionScreen(Screen[None]):
         self.spawn(self.connection.cancel(session_id))
 
     # --- Authentication -------------------------------------------------------------
+
+    def action_login(self) -> None:
+        """Pick one of the agent's login methods."""
+        connection = self.connection
+        if connection is None or not connection.auth_methods:
+            self.notify("The agent offers no login methods", timeout=2)
+            return
+
+        def chosen(method_id: str | None) -> None:
+            if method_id is not None:
+                self.call(self.login, method_id)
+
+        self.app.push_screen(
+            LoginScreen(connection.agent_name, connection.auth_methods), callback=chosen
+        )
 
     async def login(self, method_id: str) -> None:
         """Log in with an auth method, then retry creating a session."""

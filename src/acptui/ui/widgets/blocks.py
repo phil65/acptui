@@ -36,6 +36,7 @@ from acptui.protocol.state import (
     ToolCallEntry,
     blocks_text,
 )
+from acptui.ui.markdown import AgentMarkdown, inline_markdown
 from acptui.ui.render import pill, status_icon, tool_icon
 from acptui.ui.widgets.diff import DiffView
 from acptui.ui.widgets.terminal import ShellView, TerminalView
@@ -95,7 +96,7 @@ class UserMessageView(Static):
         self.update(self._message_content())
 
 
-class StreamingMarkdown(Markdown):
+class StreamingMarkdown(AgentMarkdown):
     """Markdown that streams appended text, starting only after its initial content is shown.
 
     ``Markdown`` renders its initial content in an async mount handler; text streamed
@@ -214,7 +215,7 @@ def _text_widget(text: str) -> Widget:
     if "\x1b[" in text:
         return Static(Text.from_ansi(text + note), classes="tool-text")
     if "```" in text or re.search(r"^#{1,6}\s", text, re.MULTILINE):
-        return Markdown(text + note, classes="tool-markdown")
+        return AgentMarkdown(text + note, classes="tool-markdown")
     return Static(Content(text.rstrip("\n") + note), classes="tool-text")
 
 
@@ -386,7 +387,9 @@ class ToolCallView(Vertical):
             case EmbeddedResource(resource=TextResourceContents(text=text)):
                 return _text_widget(text)
             case _:
-                return Markdown(content_markdown([block], self.state.cwd), classes="tool-markdown")
+                return AgentMarkdown(
+                    content_markdown([block], self.state.cwd), classes="tool-markdown"
+                )
 
     async def refresh_entry(self) -> None:
         """Update after the tool call changed (re-renders content only if it changed)."""
@@ -411,8 +414,12 @@ class ToolCallView(Vertical):
             view.mode = mode
 
 
-class PlanView(Static):
-    """The agent's plan (adapted from toad's plan widget: status icons, priority pills)."""
+class PlanView(Vertical):
+    """The agent's plan (adapted from toad's plan widget: status icons, priority pills).
+
+    Plan entries and Markdown plans are Markdown (ACP v2): entries are rendered inline
+    (one line each), a Markdown plan as a document.
+    """
 
     DEFAULT_CSS = """
     PlanView {
@@ -421,6 +428,8 @@ class PlanView(Static):
         border-title-color: $secondary;
         padding: 0 1;
         margin: 0 0 1 0;
+        #plan-items { height: auto; }
+        #plan-markdown { height: auto; margin: 0; padding: 0; background: transparent; }
     }
     PlanView.-removed { display: none; }
     """
@@ -435,6 +444,14 @@ class PlanView(Static):
         super().__init__()
         self.entry = entry
         self.border_title = "Plan"
+        self.items = Static(id="plan-items")
+        self.markdown = AgentMarkdown(id="plan-markdown")
+
+    def compose(self) -> ComposeResult:
+        yield self.items
+        yield self.markdown
+
+    def on_mount(self) -> None:
         self.refresh_entry()
 
     def refresh_entry(self) -> None:
@@ -443,30 +460,30 @@ class PlanView(Static):
 
         self.set_class(self.entry.removed, "-removed")
         content = self.entry.content
+        is_items = isinstance(content, PlanItems)
+        self.items.display = is_items
+        self.markdown.display = not is_items
         if not isinstance(content, PlanItems):
             path = content.path if is_set(content.path) and content.path else None
             if path:
                 self.border_subtitle = path
-            self.update(Content(content.content))
+            if self.markdown.source != content.content:
+                self.markdown.update(content.content)
             return
         lines: list[Content] = []
         for item in content.entries:
             label, bg, fg = self.PRIORITIES.get(
                 item.priority, (item.priority[:1].upper(), "$panel", "$text")
             )
-            text_style = "$text-muted strike" if item.status in {"completed", "cancelled"} else ""
+            text = inline_markdown(item.content, single_line=True)
+            if item.status in {"completed", "cancelled"}:
+                text = text.stylize("$text-muted strike")
             lines.append(
-                Content.assemble(
-                    status_icon(item.status),
-                    " ",
-                    pill(label, bg, fg),
-                    " ",
-                    (item.content, text_style),
-                )
+                Content.assemble(status_icon(item.status), " ", pill(label, bg, fg), " ", text)
             )
         done = sum(1 for item in content.entries if item.status == "completed")
         self.border_subtitle = f"{done}/{len(content.entries)}"
-        self.update(Content("\n").join(lines) if lines else Content("(empty plan)"))
+        self.items.update(Content("\n").join(lines) if lines else Content("(empty plan)"))
 
 
 class NoticeView(Static):
@@ -550,8 +567,11 @@ class SessionMessageView(Static):
         self.update(Content.assemble((header, "bold $secondary"), "\n", body))
 
 
-class SubagentView(Static, can_focus=True):
-    """A subagent session; enter opens its conversation, x cancels its work."""
+class SubagentView(Vertical, can_focus=True):
+    """A subagent session; enter opens its conversation, x cancels its work.
+
+    The description comes from the model that launched the subagent: Markdown (ACP v2).
+    """
 
     BINDINGS: ClassVar = [
         Binding("enter", "open", "Open subagent", show=False),
@@ -565,6 +585,10 @@ class SubagentView(Static, can_focus=True):
         padding: 0 1;
         margin: 0 0 1 0;
         &:focus { border: round $accent; }
+        #subagent-header { height: auto; }
+        #subagent-description {
+            height: auto; margin: 0; padding: 0; background: transparent; color: $text-muted;
+        }
     }
     """
 
@@ -585,6 +609,14 @@ class SubagentView(Static, can_focus=True):
     def __init__(self, entry: SubagentEntry) -> None:
         super().__init__()
         self.entry = entry
+        self.header = Static(id="subagent-header")
+        self.description = AgentMarkdown(id="subagent-description")
+
+    def compose(self) -> ComposeResult:
+        yield self.header
+        yield self.description
+
+    def on_mount(self) -> None:
         self.refresh_entry()
 
     def refresh_entry(self) -> None:
@@ -603,9 +635,11 @@ class SubagentView(Static, can_focus=True):
             (f"  {entry.activity}", "$text-muted"),
             (f"  ({hints})", "$text-muted italic"),
         ]
-        if entry.description:
-            parts += ["\n", (entry.description, "$text-muted")]
-        self.update(Content.assemble(*parts))
+        self.header.update(Content.assemble(*parts))
+        description = entry.description or ""
+        self.description.display = bool(description)
+        if self.description.source != description:
+            self.description.update(description)
 
     def action_open(self) -> None:
         self.post_message(self.Open(self.entry.session_id))

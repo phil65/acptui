@@ -169,7 +169,7 @@ async def subagent(agent: DemoAgent, session: DemoSession) -> None:
         SubagentUpdate(
             session_id=child.session_id,
             title="Researcher",
-            description="Looks things up for the main agent",
+            description="Looks things up for the **main** agent",
             capabilities=caps,
             state=RunningStateUpdate(),
             cwd=session.cwd,

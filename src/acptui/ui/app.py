@@ -19,16 +19,20 @@ from rich.console import Console
 from textual.app import App
 from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
+from textual.markup import escape
 
 from acptui.setup import build_setup
 from acptui.ui.agent_log import AgentLog
-from acptui.ui.screens.dialogs import _select_values
+from acptui.ui.markdown import AgentMarkdown, link_is_web, summary_markdown
+from acptui.ui.screens.dialogs import ConfirmScreen, _select_values, method_description
 from acptui.ui.screens.picker import AgentPicker
 from acptui.ui.screens.session import SessionScreen
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+
+    from textual.widgets import Markdown
 
     from acptui.config import AgentSpec, Settings
     from acptui.protocol.connection import SessionSetup
@@ -57,24 +61,28 @@ def session_commands(screen: SessionScreen) -> Iterator[tuple[str, str, Callable
             if isinstance(option, SelectSessionConfigOption):
                 for value, name, _ in _select_values(option):
                     callback = partial(screen.call, screen.set_config, option.config_id, value)
-                    yield f"{option.name}: {name}", f"Set {option.name.lower()} to {name}", callback
+                    help_text = escape(f"Set {option.name.lower()} to {name}")
+                    yield f"{option.name}: {name}", help_text, callback
             elif isinstance(option, BooleanSessionConfigOption):
                 new = not option.current_value
                 callback = partial(screen.call, screen.set_config, option.config_id, new)
                 yield (
                     f"Toggle {option.name}",
-                    f"Turn {option.name.lower()} {'on' if new else 'off'}",
+                    escape(f"Turn {option.name.lower()} {'on' if new else 'off'}"),
                     callback,
                 )
     connection = screen.connection
     if connection is None:
         return
+    if connection.auth_methods:
+        yield "Log in…", "Pick one of the agent's login methods", screen.action_login
     for method in connection.auth_methods:
         if isinstance(method, AuthMethodAgent | AuthMethodTerminal):
             kind = "in a terminal" if isinstance(method, AuthMethodTerminal) else "via the agent"
+            description = method_description(method)  # Markdown (ACP v2)
             yield (
                 f"Log in: {method.name}",
-                f"Authenticate {kind}",
+                summary_markdown(description).markup if description else f"Authenticate {kind}",
                 partial(screen.call, screen.login, method.method_id),
             )
     if connection.supports_login:
@@ -194,6 +202,26 @@ class AcpTui(App[None]):
     def on_agent_picker_picked(self, message: AgentPicker.Picked) -> None:
         self.spec = message.spec
         self.switch_screen(self._session_screen(message.spec))
+
+    def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
+        """Open a link the user clicked in agent Markdown.
+
+        ``http(s)`` links open in the browser (the toast shows the full target); anything
+        else is shown and needs a confirmation first (ACP v2 security guidance).
+        """
+        if not isinstance(event.markdown, AgentMarkdown):
+            return
+        href = event.href
+        if link_is_web(href):
+            self.open_url(href)
+            self.notify(href, title="Opening link", markup=False)
+            return
+
+        def answered(yes: bool | None) -> None:
+            if yes:
+                self.open_url(href)
+
+        self.push_screen(ConfirmScreen(f"Open this link?\n\n{href}"), callback=answered)
 
     async def action_quit(self) -> None:
         for screen in self.screen_stack:

@@ -20,6 +20,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 from acptui.protocol.content import relative_display
+from acptui.ui.markdown import AgentMarkdown
 from acptui.ui.render import tool_icon
 from acptui.ui.widgets.diff import DiffView
 
@@ -78,7 +79,10 @@ class PermissionScreen(ModalScreen[RequestPermissionResponse]):
             padding: 0 1;
         }
         #title { text-style: bold; color: $text-warning; margin: 0 0 1 0; }
-        #description { color: $text-muted; margin: 0 0 1 0; }
+        #description {
+            height: auto; max-height: 12; color: $text-muted; margin: 0 0 1 0;
+            padding: 0; background: transparent;
+        }
         #details { height: auto; max-height: 24; margin: 0 0 1 0; }
         #details > Static { height: auto; }
         #options { height: auto; }
@@ -108,7 +112,7 @@ class PermissionScreen(ModalScreen[RequestPermissionResponse]):
         with Vertical(id="dialog"):
             yield Static(Content(f"⚠ {request.title}"), id="title")
             if is_set(request.description) and request.description:
-                yield Static(Content(request.description), id="description")
+                yield AgentMarkdown(request.description, id="description")  # Markdown (ACP v2)
             with VerticalScroll(id="details"):
                 yield from self._details()
             with Horizontal(id="options"):

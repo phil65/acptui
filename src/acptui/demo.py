@@ -179,8 +179,12 @@ AGENT_INFO = Implementation(name="acptui-demo", title="Demo agent", version=acpt
 MODELS = frozenset({"demo-fast", "demo-smart"})
 
 COMMANDS: list[AvailableCommand] = [
-    Command(name="tour", description="Show what acptui renders (the default)"),
-    Command(name="echo", description="Echo the input", input=TextCommandInput(hint="text to echo")),
+    Command(name="tour", description="Show what **acptui** renders (the default)"),
+    Command(
+        name="echo",
+        description="Echo the `text` you give it",
+        input=TextCommandInput(hint="text to echo"),
+    ),
     Command(name="slow", description="Stream slowly (try cancelling with esc)"),
     Command(name="fail", description="End the turn with an error"),
     Command(name="crash", description="Make the agent process exit"),
@@ -284,13 +288,14 @@ class DemoSession:
                 config_id="mode",
                 name="Mode",
                 category="mode",
+                description="How the agent edits: **ask** first, or `auto`.",
                 current_value=self.mode,
                 options=[
                     SessionConfigSelectOption(
-                        value="ask", name="Ask", description="Ask before editing files"
+                        value="ask", name="Ask", description="Ask before *editing* files"
                     ),
                     SessionConfigSelectOption(
-                        value="auto", name="Auto", description="Edit without asking"
+                        value="auto", name="Auto", description="Edit **without** asking"
                     ),
                 ],
             ),
@@ -386,10 +391,15 @@ class DemoAgent(Agent):
             ),
             auth_methods=[
                 AuthMethodAgent(
-                    method_id="demo-login", name="Demo login", description="Pretend to log in"
+                    method_id="demo-login",
+                    name="Demo login",
+                    description="Pretend to log in (`demo login`)",
                 ),
                 AuthMethodTerminal(
-                    method_id="demo-terminal", name="Demo terminal login", args=["--login"]
+                    method_id="demo-terminal",
+                    name="Demo terminal login",
+                    description="Runs the agent with `--login` in the terminal",
+                    args=["--login"],
                 ),
             ],
         )
@@ -731,7 +741,7 @@ class DemoAgent(Agent):
                 session,
                 Notice(severity="info", title=f"Received {attachments} attached resource(s)"),
             )
-        plan = ["Read the project", "Inspect the directory", "Propose an edit"]
+        plan = ["Read the project", "Inspect the directory", "Propose an edit to `README.md`"]
         await self._plan(session, plan, done=0)
 
         # 1. A read tool call
@@ -810,7 +820,7 @@ class DemoAgent(Agent):
             RequestPermissionRequest(
                 session_id=session.session_id,
                 title="Allow the demo agent to edit this file?",
-                description="Nothing is written: the demo agent only pretends.",
+                description="Nothing is written: the demo agent only *pretends* (`dry run`).",
                 subject=ToolCallPermissionSubject(tool_call=tool_call),
                 options=[
                     PermissionOption(option_id="allow", name="Allow", kind="allow_once"),
