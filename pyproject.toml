@@ -31,7 +31,7 @@ classifiers = [
 ]
 dependencies = [
   # Only add below (Copier)
-  "aclientp[websocket]>=0.3.0",
+  "aclientp[websocket]>=0.4.0",  # 0.4: notifications before a response are handled first
   "anyio>=4.0",
   "platformdirs>=4.14.8",
   "pydantic",

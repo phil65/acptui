@@ -56,7 +56,7 @@ Abbreviations: `conn` = `protocol/connection.py` (`AgentConnection`), `state` =
 | `auth/status` | `conn.auth_status` | same |
 | `providers/list` / `set` / `disable` | `conn.*_provider(s)`, `ui/screens/providers.py` | SC `test_providers`; AS `test_providers_dialog` |
 | `session/new` (cwd, MCP servers, system prompt, directories, initial config options) | `conn.new_session(SessionSetup)` | SC `test_session_setup_is_sent` |
-| `session/resume` with `replayFrom: start` (the known title outlasts replayed ones) | `conn.resume_session`, `session._resume`, `state.keep_title`, `acptui run --resume` | C `test_list_and_resume_with_replay`; A `test_new_and_resume_session`; AS `test_resume_keeps_the_title`; S `test_a_kept_title_outlasts_the_replayed_ones` |
+| `session/resume` with `replayFrom: start` (the listed title outlasts replayed ones) | `conn.resume_session`, `session._resume`, `acptui run --resume` | C `test_list_and_resume_with_replay`; A `test_new_and_resume_session`; AS `test_resume_keeps_the_title` |
 | `session/fork` (whole or at a cursor; the fork shows the timeline up to it) | `conn.fork_session`, `ForkScreen` (`ctrl+f`), `state.forked` | SC `test_session_management`; AS `test_fork_rename_and_session_list`; S `test_a_whole_fork_copies_the_timeline`, `test_a_fork_at_a_cursor_copies_what_comes_before_it` |
 | `session/close` | `conn.close_session` (on new session) | A `test_new_and_resume_session` |
 | `session/list` (cursor pages, `archived` filter) | `SessionListScreen` (`ctrl+r`, "load more", `h`) | SC `test_session_management`; AS `test_fork_rename_and_session_list` |

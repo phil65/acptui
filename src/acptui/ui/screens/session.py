@@ -369,21 +369,23 @@ class SessionScreen(Screen[None]):
     async def _resume(self, session_id: str, title: str | None = None) -> None:
         """Resume a session with its history replayed.
 
-        The resume response has no title: the one known (the session list's, else the
-        session's from before) stays; the titles in the replayed history are older.
+        The resume response has no title. The replayed history (handled when the response
+        arrives) may name older ones: the session list's (current) title wins; without
+        it, the one the session had here before, if the replay names none.
         """
         connection = self._connection()
         known = self.sessions.get(session_id)
-        title = title or (known.title if known is not None else None)
+        earlier = known.title if known is not None else None
         state = self._show_session(session_id, None, None, replaying=True)
-        state.title = title
-        state.keep_title = title is not None
         try:
             response = await connection.resume_session(session_id, setup=self.setup)
         except RequestError as exc:
             self._fatal(f"Could not resume the session: {exc}", title="Session error", fatal=False)
             return
         state.replaying = False
+        if title is not None or state.title is None:
+            state.title = title or earlier
+            self.status.refresh_status()
         if is_set(response.config_options):
             self.conversation.push(state.set_config_options(response.config_options))
         if is_set(response.available_commands):

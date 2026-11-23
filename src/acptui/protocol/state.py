@@ -349,8 +349,6 @@ class SessionState:
     parent_id: str | None = None
     """For a subagent session: the session that owns it."""
     replaying: bool = False
-    keep_title: bool = False
-    """Keep ``title`` through a replay (the replayed history's titles are older)."""
     _messages: dict[tuple[MessageRole, str], MessageEntry] = field(default_factory=dict)
     _compactions: dict[str, CompactionEntry] = field(default_factory=dict)
 
@@ -475,8 +473,8 @@ class SessionState:
             case SessionInfoUpdate():
                 if is_set(update.updated_at):
                     self.updated_at = update.updated_at
-                if not is_set(update.title) or self.keep_title:
-                    return []  # A replayed title is older than the one kept
+                if not is_set(update.title):
+                    return []
                 self.title = update.title
                 return [SessionChanged("title")]
             case UsageUpdate():
@@ -496,7 +494,6 @@ class SessionState:
                 return [*changes, EntryChanged(compaction)]
             case ReplayComplete():
                 self.replaying = False
-                self.keep_title = False
                 return [SessionChanged("replay")]
             case PromptSuggestionsUpdate():
                 self.suggestions = list(update.suggestions)
@@ -697,8 +694,6 @@ class SessionState:
         changes: list[Change] = []
         if is_set(update.background):
             self.background = list(update.background or ())
-        if not self.replaying:  # A turn after a replay that never said it completed
-            self.keep_title = False
         match update:
             case RunningStateSessionUpdate():
                 self.activity = "running"

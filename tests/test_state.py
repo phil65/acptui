@@ -330,12 +330,3 @@ def test_a_fork_at_a_cursor_copies_what_comes_before_it() -> None:
     before = state.forked("s4", state.cursors["c3"])
     assert [e.text for e in before.entries if isinstance(e, MessageEntry)] == ["first"]
     assert not before.cursors  # The source's cursors are not the fork's
-
-
-def test_a_kept_title_outlasts_the_replayed_ones() -> None:
-    state = SessionState("s1", "/work", title="Renamed", replaying=True, keep_title=True)
-    state.apply(SessionInfoUpdate(title="First prompt"))  # From the replayed history
-    assert state.title == "Renamed"
-    state.apply(ReplayComplete())
-    state.apply(SessionInfoUpdate(title="Newer"))
-    assert state.title == "Newer"
