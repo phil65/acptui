@@ -11,9 +11,10 @@ license-files = ["LICENSE"]
 authors = [
   { name = "Philipp Temminghoff", email = "philipptemminghoff@googlemail.com" },
 ]
-keywords = []
+keywords = ["acp", "agent-client-protocol", "agents", "ai", "claude-code", "codex", "llm", "terminal", "textual", "tui"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
   "Framework :: Pydantic",
   "Framework :: Pydantic :: 2",
   "Intended Audience :: Developers",
@@ -23,13 +24,17 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Topic :: Software Development",
+  "Topic :: Software Development :: User Interfaces",
+  "Topic :: Terminals",
   "Topic :: Utilities",
   "Typing :: Typed",
 ]
 dependencies = [
   "aclientp[websocket]>=0.3.0",
+  "anyio>=4.0",
   "platformdirs>=4.14.8",
   "pydantic",
+  "rich>=14",
   "schemez",
   # Only add below (Copier)
   "textual>=8.2.8",
@@ -82,6 +87,9 @@ exclude_lines = [
   "except ImportError",
   'if __name__ == "__main__":',
 ]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["schemez"]
 
 [tool.mknodes]
 allowed-commit-types = [
