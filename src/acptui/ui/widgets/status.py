@@ -41,6 +41,8 @@ class StatusBar(Horizontal):
         self.agent = ""
         self.connection_state = "starting"
         self.state: SessionState | None = None
+        self.account = ""
+        """The agent's active account (from ``auth/status``), if known."""
         self._frame = 0
 
     def compose(self) -> ComposeResult:
@@ -83,6 +85,10 @@ class StatusBar(Horizontal):
         from acptui.ui.screens.dialogs import option_value_label
 
         parts: list[Content] = []
+        if self.account:
+            parts.append(Content(self.account).stylize("$text-muted"))
+        if state.background:
+            parts.append(Content(f"⚙ {len(state.background)} bg").stylize("$text-accent"))
         for option in state.config_options:
             category = option.category if is_set(option.category) else None
             if category in {"mode", "model"}:
@@ -103,4 +109,8 @@ class StatusBar(Horizontal):
             parts.append(Content.assemble(("ctx ", "$text-muted"), (used, style)))
             if usage.cost is not None:
                 parts.append(Content(f"{usage.cost.amount:.2f} {usage.cost.currency}"))
+        if (turn := state.last_turn_usage) is not None:
+            parts.append(
+                Content(f"turn {human_tokens(turn.total_tokens)} tok").stylize("$text-muted")
+            )
         return Content("  ").join(parts)

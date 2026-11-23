@@ -20,27 +20,63 @@ import uuid
 
 from aclientp.exceptions import RequestError
 from aclientp.schema.v2 import (
+    AgentAuthCapabilities,
     AgentCapabilities,
+    AgentMessage,
     AgentMessageChunk,
+    AgentMessageCursorAnchor,
     AgentThoughtChunk,
+    ArchiveSessionRequest,
+    ArchiveSessionResponse,
+    AuthAccount,
+    AuthMethodAgent,
+    AuthMethodTerminal,
+    AuthStatusCapabilities,
+    AuthStatusRequest,
+    AuthStatusResponse,
+    AuthStatusUpdateNotification,
     BooleanSessionConfigOption,
     CancelSessionNotification,
     CancelTerminalRequest,
     CancelTerminalResponse,
+    CancelToolCallRequest,
+    CancelToolCallResponse,
     CloseSessionRequest,
     CloseSessionResponse,
     Command,
     ConfigOptionUpdate,
     Content,
+    Cost,
+    CursorCapabilities,
+    CursorForkCapabilities,
+    CursorUpdate,
+    DeleteSessionRequest,
+    DeleteSessionResponse,
     Diff,
     DiffPatch,
+    DisableProviderRequest,
+    DisableProviderResponse,
     Error,
+    ForkSessionRequest,
+    ForkSessionResponse,
     IdleStateSessionUpdate,
+    IdleStateUpdate,
     Implementation,
+    InitialConfigOptionBoolean,
+    InitialConfigOptionId,
     InitializeRequest,
     InitializeResponse,
+    ListProvidersRequest,
+    ListProvidersResponse,
     ListSessionsRequest,
     ListSessionsResponse,
+    LoginAuthRequest,
+    LoginAuthResponse,
+    LogoutAuthRequest,
+    LogoutAuthResponse,
+    McpCapabilities,
+    McpHttpCapabilities,
+    McpStdioCapabilities,
     ModifyDiffChange,
     NewSessionRequest,
     NewSessionResponse,
@@ -49,25 +85,52 @@ from aclientp.schema.v2 import (
     PlanEntry,
     PlanItems,
     PlanUpdate,
+    PromptAudioCapabilities,
     PromptCapabilities,
     PromptEmbeddedContextCapabilities,
     PromptImageCapabilities,
     PromptRequest,
     PromptResponse,
+    PromptSkillCapabilities,
+    ProviderCurrentConfig,
+    ProviderInfo,
+    ProvidersCapabilities,
     ReplayComplete,
     RequestPermissionRequest,
     ResumeSessionRequest,
     ResumeSessionResponse,
     RunningStateSessionUpdate,
+    RunningStateUpdate,
     SelectedPermissionOutcome,
     SelectSessionConfigOption,
+    SessionAdditionalDirectoriesCapabilities,
+    SessionArchiveCapabilities,
     SessionCapabilities,
+    SessionConfigSelectGroup,
     SessionConfigSelectOption,
+    SessionDeleteCapabilities,
+    SessionForkCapabilities,
     SessionInfo,
     SessionInfoUpdate,
+    SessionOptionsCapabilities,
+    SessionOptionsRequest,
+    SessionOptionsResponse,
+    SessionStatusCapabilities,
+    SessionStatusRequest,
+    SessionStatusResponse,
+    SessionSystemPromptCapabilities,
+    SessionSystemPromptModeCapabilities,
+    SessionSystemPromptOverrideCapabilities,
+    SessionTitleCapabilities,
     SetConfigOptionBooleanRequest,
     SetConfigOptionIdRequest,
+    SetProviderRequest,
+    SetProviderResponse,
     SetSessionConfigOptionResponse,
+    SetSessionTitleRequest,
+    SetSessionTitleResponse,
+    Skill,
+    SkillReference,
     Terminal,
     TerminalCancelCapabilities,
     TerminalCapabilities,
@@ -80,7 +143,10 @@ from aclientp.schema.v2 import (
     ToolCallPermissionSubject,
     ToolCallSessionUpdate,
     ToolCallUpdate,
+    UnarchiveSessionRequest,
+    UnarchiveSessionResponse,
     UpdateSessionNotification,
+    Usage,
     UsageUpdate,
     UserMessage,
 )
@@ -89,6 +155,7 @@ from aclientp.v2.agent import Agent, AgentSideConnection
 import anyio
 
 import acptui
+from acptui import demo_scripts as scripts
 
 
 if TYPE_CHECKING:
@@ -96,15 +163,20 @@ if TYPE_CHECKING:
 
     from aclientp.schema.v2 import (
         AvailableCommand,
+        BackgroundWork,
         ContentBlock,
+        InitialSessionConfigOption,
         SessionConfigOption,
         SessionUpdate,
         SetSessionConfigOptionRequest,
+        StateUpdate,
     )
     from anyio.abc import ByteReceiveStream, ByteSendStream
 
 
 AGENT_INFO = Implementation(name="acptui-demo", title="Demo agent", version=acptui.__version__)
+
+MODELS = frozenset({"demo-fast", "demo-smart"})
 
 COMMANDS: list[AvailableCommand] = [
     Command(name="tour", description="Show what acptui renders (the default)"),
@@ -112,6 +184,19 @@ COMMANDS: list[AvailableCommand] = [
     Command(name="slow", description="Stream slowly (try cancelling with esc)"),
     Command(name="fail", description="End the turn with an error"),
     Command(name="crash", description="Make the agent process exit"),
+    Command(name="media", description="Every kind of content block"),
+    Command(name="subagent", description="Run a subagent session"),
+    Command(name="elicit", description="Ask for input with a form"),
+    Command(name="url", description="Ask the user to visit a URL"),
+    Command(name="compact", description="Compact the context"),
+    Command(name="suggest", description="Suggest next prompts"),
+    Command(name="plans", description="Markdown and item plans"),
+    Command(name="notice", description="Notices of every severity"),
+    Command(name="background", description="Leave a terminal running in the background"),
+    Command(name="ext", description="Send custom (extension) messages"),
+    Command(name="command", description="Ask permission to run a command"),
+    Command(name="setup", description="Show what the client sent on session setup"),
+    Command(name="cancel-tool", description="A tool call that can be cancelled"),
 ]
 
 ANSWER = """\
@@ -158,6 +243,39 @@ class DemoSession:
     model: str = "demo-fast"
     thinking: bool = True
     turn: asyncio.Task[None] | None = None
+    archived: bool = False
+    parent_id: str | None = None
+    additional_directories: list[str] = field(default_factory=list)
+    mcp_servers: list[dict[str, object]] = field(default_factory=list)
+    system_prompt: str | None = None
+    cursors: dict[str, int] = field(default_factory=dict)
+    """Fork points: cursor ID -> length of the history before it."""
+    cancelled_tools: set[str] = field(default_factory=set)
+
+    def apply_initial(self, option: InitialSessionConfigOption) -> None:
+        """Apply an initial config option value; unknown ones are ignored (as the spec says)."""
+        match option:
+            case InitialConfigOptionId(config_id="mode", value=value) if value in {"ask", "auto"}:
+                self.mode = value
+            case InitialConfigOptionId(config_id="model", value=value) if value in MODELS:
+                self.model = value
+            case InitialConfigOptionBoolean(config_id="thinking", value=value):
+                self.thinking = value
+            case _:
+                pass
+
+    def describe_setup(self) -> str:
+        """What the client sent on session setup, as Markdown."""
+        servers = ", ".join(str(s.get("name")) for s in self.mcp_servers) or "none"
+        return "\n".join([
+            "## Session setup",
+            "",
+            f"- cwd: `{self.cwd}`",
+            f"- additional directories: {', '.join(self.additional_directories) or 'none'}",
+            f"- MCP servers: {servers}",
+            f"- system prompt: {self.system_prompt or 'none'}",
+            f"- mode: {self.mode}, model: {self.model}, thinking: {self.thinking}",
+        ])
 
     def config_options(self) -> list[SessionConfigOption]:
         """The session's config options and their values."""
@@ -182,8 +300,16 @@ class DemoSession:
                 category="model",
                 current_value=self.model,
                 options=[
-                    SessionConfigSelectOption(value="demo-fast", name="Demo Fast"),
-                    SessionConfigSelectOption(value="demo-smart", name="Demo Smart"),
+                    SessionConfigSelectGroup(
+                        group_id="fast",
+                        name="Fast",
+                        options=[SessionConfigSelectOption(value="demo-fast", name="Demo Fast")],
+                    ),
+                    SessionConfigSelectGroup(
+                        group_id="smart",
+                        name="Smart",
+                        options=[SessionConfigSelectOption(value="demo-smart", name="Demo Smart")],
+                    ),
                 ],
             ),
             BooleanSessionConfigOption(
@@ -201,50 +327,167 @@ class DemoAgent(Agent):
     def __init__(self, conn: AgentSideConnection) -> None:
         self.conn = conn
         self.sessions: dict[str, DemoSession] = {}
+        self.client_skills = False
+        self.logged_in = False
+        self.providers: dict[str, ProviderInfo] = {
+            "main": ProviderInfo(
+                provider_id="main",
+                supported=["anthropic", "openai"],
+                required=True,
+                current=ProviderCurrentConfig(
+                    api_type="anthropic", base_url="https://api.example.com"
+                ),
+            ),
+            "backup": ProviderInfo(provider_id="backup", supported=["openai"], required=False),
+        }
 
     # --- Lifecycle ------------------------------------------------------------------
 
     async def initialize(self, params: InitializeRequest) -> InitializeResponse:
+        caps = params.capabilities if is_set(params.capabilities) else None
+        session_caps = caps.session if caps is not None and is_set(caps.session) else None
+        commands = (
+            session_caps.commands
+            if session_caps is not None and is_set(session_caps.commands)
+            else None
+        )
+        self.client_skills = (
+            commands is not None and is_set(commands.skill) and commands.skill is not None
+        )
         prompt = PromptCapabilities(
-            image=PromptImageCapabilities(), embedded_context=PromptEmbeddedContextCapabilities()
+            image=PromptImageCapabilities(),
+            audio=PromptAudioCapabilities(),
+            embedded_context=PromptEmbeddedContextCapabilities(),
+            skill=PromptSkillCapabilities(),
+        )
+        session = SessionCapabilities(
+            prompt=prompt,
+            mcp=McpCapabilities(stdio=McpStdioCapabilities(), http=McpHttpCapabilities()),
+            delete=SessionDeleteCapabilities(),
+            additional_directories=SessionAdditionalDirectoriesCapabilities(),
+            system_prompt=SessionSystemPromptCapabilities(
+                mode=SessionSystemPromptModeCapabilities(
+                    override=SessionSystemPromptOverrideCapabilities()
+                )
+            ),
+            fork=SessionForkCapabilities(),
+            archive=SessionArchiveCapabilities(),
+            status=SessionStatusCapabilities(),
+            options=SessionOptionsCapabilities(),
+            title=SessionTitleCapabilities(),
         )
         return InitializeResponse(
             protocol_version=2,
             info=AGENT_INFO,
-            capabilities=AgentCapabilities(session=SessionCapabilities(prompt=prompt)),
+            capabilities=AgentCapabilities(
+                session=session,
+                auth=AgentAuthCapabilities(status=AuthStatusCapabilities()),
+                providers=ProvidersCapabilities(),
+            ),
+            auth_methods=[
+                AuthMethodAgent(
+                    method_id="demo-login", name="Demo login", description="Pretend to log in"
+                ),
+                AuthMethodTerminal(
+                    method_id="demo-terminal", name="Demo terminal login", args=["--login"]
+                ),
+            ],
         )
 
-    async def new_session(self, params: NewSessionRequest) -> NewSessionResponse:
+    def _authenticated(self) -> bool:
+        if self.logged_in or os.environ.get("ACPTUI_DEMO_REQUIRE_AUTH") != "1":
+            return True
+        marker = os.environ.get("ACPTUI_DEMO_AUTH_FILE")
+        return marker is not None and Path(marker).is_file()
+
+    def _commands(self) -> list[AvailableCommand]:
+        skills: list[AvailableCommand] = [
+            Skill(name="review", description="Review the code (a skill)")
+        ]
+        return COMMANDS + skills if self.client_skills else list(COMMANDS)
+
+    def _setup(
+        self,
+        session: DemoSession,
+        params: NewSessionRequest | ResumeSessionRequest | ForkSessionRequest,
+    ) -> None:
         if not Path(params.cwd).is_dir():
             raise RequestError.invalid_params({"details": f"not a directory: {params.cwd}"})
+        session.cwd = params.cwd
+        if is_set(params.additional_directories):
+            session.additional_directories = list(params.additional_directories)
+        if is_set(params.mcp_servers):
+            session.mcp_servers = [
+                server.model_dump(by_alias=True) for server in params.mcp_servers
+            ]
+        if is_set(params.system_prompt) and params.system_prompt is not None:
+            text = "".join(
+                b.text for b in params.system_prompt.content if isinstance(b, TextContent)
+            )
+            session.system_prompt = f"{params.system_prompt.mode}: {text}"
+        if is_set(params.config_options):
+            for option in params.config_options:
+                session.apply_initial(option)
+
+    async def new_session(self, params: NewSessionRequest) -> NewSessionResponse:
+        if not self._authenticated():
+            raise RequestError.auth_required({"details": "log in first"})
         session = DemoSession(str(uuid.uuid4()), params.cwd)
+        self._setup(session, params)
         self.sessions[session.session_id] = session
         return NewSessionResponse(
             session_id=session.session_id,
             config_options=session.config_options(),
-            available_commands=COMMANDS,
+            available_commands=self._commands(),
         )
 
     async def list_sessions(self, params: ListSessionsRequest) -> ListSessionsResponse:
         cwd = params.cwd if is_set(params.cwd) else None
+        archived = params.archived if is_set(params.archived) and params.archived else "exclude"
         infos = [
-            SessionInfo(session_id=s.session_id, cwd=s.cwd, title=s.title, updated_at=s.updated_at)
+            SessionInfo(
+                session_id=s.session_id,
+                cwd=s.cwd,
+                title=s.title,
+                updated_at=s.updated_at,
+                archived=s.archived,
+            )
             for s in self.sessions.values()
-            if s.history and (cwd is None or s.cwd == cwd)
+            if s.history
+            and s.parent_id is None
+            and (cwd is None or s.cwd == cwd)
+            and (archived == "include" or (archived == "only") == s.archived)
         ]
         return ListSessionsResponse(sessions=infos)
 
     async def resume_session(self, params: ResumeSessionRequest) -> ResumeSessionResponse:
-        session = self.sessions.get(params.session_id)
-        if session is None:
-            raise RequestError.session_not_found(params.session_id)
+        session = self._session(params.session_id)
+        self._setup(session, params)
         if is_set(params.replay_from) and params.replay_from is not None:
             for update in session.history:
                 await self._send(session, update, record=False)
             await self._send(session, ReplayComplete(), record=False)
         await self._send(session, IdleStateSessionUpdate(), record=False)
         return ResumeSessionResponse(
-            config_options=session.config_options(), available_commands=COMMANDS
+            config_options=session.config_options(), available_commands=self._commands()
+        )
+
+    async def fork_session(self, params: ForkSessionRequest) -> ForkSessionResponse:
+        source = self._session(params.session_id)
+        fork = DemoSession(
+            str(uuid.uuid4()), params.cwd, title=f"{source.title or 'session'} (fork)"
+        )
+        self._setup(fork, params)
+        cursor_id = params.cursor_id if is_set(params.cursor_id) else None
+        if cursor_id is not None and cursor_id not in source.cursors:
+            raise RequestError.invalid_params({"details": f"unknown cursor {cursor_id}"})
+        cut = source.cursors[cursor_id] if cursor_id is not None else len(source.history)
+        fork.history = list(source.history[:cut])
+        self.sessions[fork.session_id] = fork
+        return ForkSessionResponse(
+            session_id=fork.session_id,
+            config_options=fork.config_options(),
+            available_commands=self._commands(),
         )
 
     async def close_session(self, params: CloseSessionRequest) -> CloseSessionResponse:
@@ -252,6 +495,36 @@ class DemoAgent(Agent):
         if session is not None and session.turn is not None:
             session.turn.cancel()
         return CloseSessionResponse()
+
+    async def delete_session(self, params: DeleteSessionRequest) -> DeleteSessionResponse:
+        self._session(params.session_id)
+        del self.sessions[params.session_id]
+        return DeleteSessionResponse()
+
+    async def archive_session(self, params: ArchiveSessionRequest) -> ArchiveSessionResponse:
+        self._session(params.session_id).archived = True
+        return ArchiveSessionResponse()
+
+    async def unarchive_session(self, params: UnarchiveSessionRequest) -> UnarchiveSessionResponse:
+        self._session(params.session_id).archived = False
+        return UnarchiveSessionResponse()
+
+    async def session_status(self, params: SessionStatusRequest) -> SessionStatusResponse:
+        session = self._session(params.session_id)
+        running = session.turn is not None and not session.turn.done()
+        state: StateUpdate = RunningStateUpdate() if running else IdleStateUpdate()
+        return SessionStatusResponse(status="open", state=state)
+
+    async def session_options(self, params: SessionOptionsRequest) -> SessionOptionsResponse:
+        session_id = params.session_id if is_set(params.session_id) else None
+        session = self.sessions.get(session_id) if session_id else None
+        options = (session or DemoSession("preview", params.cwd)).config_options()
+        return SessionOptionsResponse(config_options=options, available_commands=self._commands())
+
+    async def set_session_title(self, params: SetSessionTitleRequest) -> SetSessionTitleResponse:
+        session = self._session(params.session_id)
+        session.title = params.title.strip()[:80] or session.title
+        return SetSessionTitleResponse(title=session.title or "")
 
     async def set_session_config_option(
         self, params: SetSessionConfigOptionRequest
@@ -263,10 +536,7 @@ class DemoAgent(Agent):
                 "auto",
             }:
                 session.mode = value
-            case SetConfigOptionIdRequest(config_id="model", value=value) if value in {
-                "demo-fast",
-                "demo-smart",
-            }:
+            case SetConfigOptionIdRequest(config_id="model", value=value) if value in MODELS:
                 session.model = value
             case SetConfigOptionBooleanRequest(config_id="thinking", value=value):
                 session.thinking = value
@@ -283,6 +553,61 @@ class DemoAgent(Agent):
         await self.cancel(CancelSessionNotification(session_id=params.session_id))
         return CancelTerminalResponse()
 
+    async def cancel_tool_call(self, params: CancelToolCallRequest) -> CancelToolCallResponse:
+        session = self._session(params.session_id)
+        session.cancelled_tools.add(params.tool_call_id)
+        return CancelToolCallResponse()
+
+    # --- Authentication and providers -----------------------------------------------
+
+    async def login(self, params: LoginAuthRequest) -> LoginAuthResponse:
+        if params.method_id != "demo-login":
+            raise RequestError.invalid_params({"details": f"unknown method {params.method_id}"})
+        self.logged_in = True
+        await self._auth_changed()
+        return LoginAuthResponse()
+
+    async def logout(self, params: LogoutAuthRequest) -> LogoutAuthResponse:
+        self.logged_in = False
+        await self._auth_changed()
+        return LogoutAuthResponse()
+
+    def _auth_state(self) -> tuple[str, list[AuthAccount]]:
+        if self.logged_in:
+            return "authenticated", [
+                AuthAccount(label="Demo account", active=True, email="demo@example.com")
+            ]
+        if self._authenticated():
+            return "not_required", []
+        return "unauthenticated", []
+
+    async def auth_status(self, params: AuthStatusRequest) -> AuthStatusResponse:
+        state, accounts = self._auth_state()
+        return AuthStatusResponse(state=state, accounts=accounts)
+
+    async def _auth_changed(self) -> None:
+        state, accounts = self._auth_state()
+        await self.conn.auth_status_update(
+            AuthStatusUpdateNotification(state=state, accounts=accounts)
+        )
+
+    async def list_providers(self, params: ListProvidersRequest) -> ListProvidersResponse:
+        return ListProvidersResponse(providers=list(self.providers.values()))
+
+    async def set_provider(self, params: SetProviderRequest) -> SetProviderResponse:
+        provider = self.providers.get(params.provider_id)
+        if provider is None or params.api_type not in provider.supported:
+            raise RequestError.invalid_params({"details": "unknown provider or api type"})
+        provider.current = ProviderCurrentConfig(api_type=params.api_type, base_url=params.base_url)
+        return SetProviderResponse()
+
+    async def disable_provider(self, params: DisableProviderRequest) -> DisableProviderResponse:
+        provider = self.providers.get(params.provider_id)
+        if provider is None or provider.required:
+            raise RequestError.invalid_params({"details": "unknown or required provider"})
+        provider.current = None
+        return DisableProviderResponse()
+
     # --- Prompts --------------------------------------------------------------------
 
     async def prompt(self, params: PromptRequest) -> PromptResponse:
@@ -292,19 +617,24 @@ class DemoAgent(Agent):
         message_id = f"user-{uuid.uuid4()}"
         await self._send(session, UserMessage(message_id=message_id, content=list(params.prompt)))
         text = "".join(b.text for b in params.prompt if isinstance(b, TextContent)).strip()
+        skill = next((b.name for b in params.prompt if isinstance(b, SkillReference)), None)
         if session.title is None:
             session.title = text[:60] or "Demo session"
             await self._send(session, SessionInfoUpdate(title=session.title))
         await self._send(session, RunningStateSessionUpdate())
-        session.turn = asyncio.create_task(self._turn(session, text, params.prompt))
+        script = f"/skill {skill}" if skill else text
+        session.turn = asyncio.create_task(self._turn(session, script, params.prompt))
         return PromptResponse(message_id=message_id)
 
     async def _turn(self, session: DemoSession, text: str, prompt: Sequence[ContentBlock]) -> None:
         try:
             command, _, rest = text.partition(" ")
+            background: list[BackgroundWork] = []
             match command:
                 case "/echo":
                     await self._stream(session, rest or "(nothing to echo)")
+                case "/skill":
+                    await self._stream(session, f"Running skill **{rest}**.")
                 case "/slow":
                     await self._stream(
                         session, "counting slowly: " + " ".join(map(str, range(1, 400))), 0.05
@@ -320,12 +650,69 @@ class DemoAgent(Agent):
                     sys.stderr.flush()
                     await anyio.sleep(0.05)
                     os._exit(3)
+                case "/media":
+                    await scripts.media(self, session)
+                case "/subagent":
+                    await scripts.subagent(self, session)
+                case "/elicit":
+                    await scripts.elicit_form(self, session)
+                case "/url":
+                    await scripts.elicit_url(self, session)
+                case "/compact":
+                    await scripts.compact(self, session)
+                case "/suggest":
+                    await scripts.suggest(self, session)
+                case "/plans":
+                    await scripts.plans(self, session)
+                case "/notice":
+                    await scripts.notices(self, session)
+                case "/background":
+                    background = await scripts.background(self, session)
+                case "/ext":
+                    await scripts.extension(self, session)
+                case "/command":
+                    await scripts.command_permission(self, session)
+                case "/setup":
+                    await self._stream(session, session.describe_setup())
+                case "/cancel-tool":
+                    await scripts.cancellable_tool(self, session)
                 case _:
                     await self._tour(session, len(prompt) - 1)
-            await self._send(session, UsageUpdate(used=12_345, size=200_000))
-            await self._send(session, IdleStateSessionUpdate(stop_reason="end_turn"))
+            await self._send(
+                session,
+                UsageUpdate(used=12_345, size=200_000, cost=Cost(amount=0.01, currency="USD")),
+            )
+            await self._mark_cursor(session)
+            usage = Usage(total_tokens=1500, input_tokens=1200, output_tokens=300)
+            await self._send(
+                session,
+                IdleStateSessionUpdate(stop_reason="end_turn", usage=usage, background=background),
+            )
         except asyncio.CancelledError:
             await self._send(session, IdleStateSessionUpdate(stop_reason="cancelled"))
+
+    async def _mark_cursor(self, session: DemoSession) -> None:
+        """Offer a fork point after the last agent message of the turn."""
+        last = next(
+            (
+                u
+                for u in reversed(session.history)
+                if isinstance(u, AgentMessageChunk | AgentMessage)
+            ),
+            None,
+        )
+        if last is None:
+            return
+        cursor_id = f"cursor-{len(session.cursors) + 1}"
+        session.cursors[cursor_id] = len(session.history)
+        await self._send(
+            session,
+            CursorUpdate(
+                cursor_id=cursor_id,
+                anchor=AgentMessageCursorAnchor(message_id=last.message_id, position="after"),
+                capabilities=CursorCapabilities(fork=CursorForkCapabilities()),
+            ),
+        )
 
     async def _tour(self, session: DemoSession, attachments: int) -> None:
         cwd = Path(session.cwd)
@@ -529,8 +916,15 @@ async def serve(writer: ByteSendStream, reader: ByteReceiveStream) -> None:
 
 
 def main() -> None:
-    """Run the demo agent on stdio."""
+    """Run the demo agent on stdio (``--login``: the terminal login of the demo)."""
     from aclientp.stdio import stdio_streams
+
+    if "--login" in sys.argv[1:]:
+        marker = os.environ.get("ACPTUI_DEMO_AUTH_FILE")
+        if marker:
+            Path(marker).write_text("logged in\n", encoding="utf-8")
+        print("Demo agent: you are now logged in.")
+        return
 
     async def run() -> None:
         stdin, stdout = await stdio_streams()

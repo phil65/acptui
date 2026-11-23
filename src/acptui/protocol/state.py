@@ -22,6 +22,7 @@ from aclientp.schema.v2 import (
     CompactionSummaryChunk,
     CompactionUpdate,
     ConfigOptionUpdate,
+    CursorUpdate,
     IdleStateSessionUpdate,
     Notice,
     OtherStateSessionUpdate,
@@ -29,10 +30,14 @@ from aclientp.schema.v2 import (
     PlanMarkdown,
     PlanRemoved,
     PlanUpdate,
+    PromptSuggestionsUpdate,
     ReplayComplete,
     RequiresActionStateSessionUpdate,
     RunningStateSessionUpdate,
     SessionInfoUpdate,
+    SessionMessage,
+    SessionMessageChunk,
+    SubagentUpdate,
     TerminalOutputChunk,
     TerminalUpdate,
     TextContent,
@@ -52,17 +57,22 @@ if TYPE_CHECKING:
 
     from aclientp.schema.v2 import (
         AvailableCommand,
+        BackgroundWork,
         ContentBlock,
         Cost,
+        CursorAnchor,
         Error,
+        PromptSuggestion,
         SessionConfigOption,
         SessionUpdate,
         TerminalExitStatus,
+        TerminalSize,
         ToolCallContent,
         ToolCallLocation,
+        Usage as TurnUsage,
     )
 
-MessageRole = Literal["user", "agent", "thought"]
+MessageRole = Literal["user", "agent", "thought", "session"]
 SessionActivity = Literal["idle", "running", "requires_action", "unknown"]
 
 MAX_TERMINAL_BYTES = 512 * 1024
@@ -86,6 +96,10 @@ class MessageEntry:
     """``None`` for a user message not yet acknowledged by the agent."""
 
     blocks: list[ContentBlock] = field(default_factory=list)
+    sender_session_id: str | None = None
+    """For ``session`` messages: the sending session."""
+    recipient_session_id: str | None = None
+    """For ``session`` messages: the receiving session."""
 
     @property
     def text(self) -> str:
@@ -169,7 +183,25 @@ class CompactionEntry:
     error: str | None = None
 
 
-Entry = MessageEntry | ToolCallEntry | PlanEntry | NoticeEntry | CompactionEntry
+@dataclass(eq=False)
+class SubagentEntry:
+    """A child session created by this session (a subagent)."""
+
+    session_id: str
+    title: str | None = None
+    description: str | None = None
+    activity: str = "idle"
+    can_cancel: bool = False
+    cwd: str | None = None
+    additional_directories: list[str] = field(default_factory=list)
+
+    @property
+    def display_title(self) -> str:
+        """Title for display."""
+        return self.title or self.session_id
+
+
+Entry = MessageEntry | ToolCallEntry | PlanEntry | NoticeEntry | CompactionEntry | SubagentEntry
 """An item of the conversation timeline."""
 
 
@@ -182,6 +214,7 @@ class TerminalState:
     cwd: str | None = None
     output: bytearray = field(default_factory=bytearray)
     exit_status: TerminalExitStatus | None = None
+    size: TerminalSize | None = None
     can_cancel: bool = False
 
     @property
@@ -194,6 +227,15 @@ class TerminalState:
         self.output.extend(data)
         if len(self.output) > MAX_TERMINAL_BYTES:
             del self.output[: len(self.output) - MAX_TERMINAL_BYTES]
+
+
+@dataclass(eq=False)
+class CursorState:
+    """A named position in the session's timeline (e.g. a point to fork from)."""
+
+    cursor_id: str
+    anchor: CursorAnchor | None = None
+    can_fork: bool = False
 
 
 @dataclass(frozen=True)
@@ -240,7 +282,9 @@ class TerminalChanged:
     appended: bytes | None = None
 
 
-SessionField = Literal["activity", "commands", "config", "usage", "title", "replay"]
+SessionField = Literal[
+    "activity", "commands", "config", "usage", "title", "replay", "suggestions", "cursors"
+]
 
 
 @dataclass(frozen=True)
@@ -281,6 +325,14 @@ class SessionState:
     activity: SessionActivity = "idle"
     stop_reason: str | None = None
     last_error: Error | None = None
+    last_turn_usage: TurnUsage | None = None
+    background: list[BackgroundWork] = field(default_factory=list)
+    suggestions: list[PromptSuggestion] = field(default_factory=list)
+    cursors: dict[str, CursorState] = field(default_factory=dict)
+    subagents: dict[str, SubagentEntry] = field(default_factory=dict)
+    updated_at: str | None = None
+    parent_id: str | None = None
+    """For a subagent session: the session that owns it."""
     replaying: bool = False
     _messages: dict[tuple[MessageRole, str], MessageEntry] = field(default_factory=dict)
     _compactions: dict[str, CompactionEntry] = field(default_factory=dict)
@@ -352,6 +404,8 @@ class SessionState:
                 self.config_options = list(update.config_options)
                 return [SessionChanged("config")]
             case SessionInfoUpdate():
+                if is_set(update.updated_at):
+                    self.updated_at = update.updated_at
                 if not is_set(update.title):
                     return []
                 self.title = update.title
@@ -374,10 +428,65 @@ class SessionState:
             case ReplayComplete():
                 self.replaying = False
                 return [SessionChanged("replay")]
+            case PromptSuggestionsUpdate():
+                self.suggestions = list(update.suggestions)
+                return [SessionChanged("suggestions")]
+            case CursorUpdate():
+                return self._cursor_update(update)
+            case SubagentUpdate():
+                return self._subagent_update(update)
+            case SessionMessage():
+                return self._session_message(update)
+            case SessionMessageChunk():
+                entry, created = self._message_entry("session", update.message_id)
+                entry.blocks.append(update.content)
+                text = update.content.text if isinstance(update.content, TextContent) else None
+                return [EntryAdded(entry) if created else EntryChanged(entry, appended=text)]
             case _:
-                # Subagents, cursors, session messages, prompt suggestions and
-                # custom updates are not shown yet.
+                # Custom (``_``-prefixed) or future update kinds: nothing to show.
                 return []
+
+    def _cursor_update(self, update: CursorUpdate) -> list[Change]:
+        cursor = self.cursors.get(update.cursor_id)
+        if cursor is None:
+            cursor = self.cursors[update.cursor_id] = CursorState(update.cursor_id)
+        if is_set(update.anchor) and update.anchor is not None and cursor.anchor is None:
+            cursor.anchor = update.anchor  # fixed after the first update
+        if is_set(update.capabilities):
+            caps = update.capabilities
+            cursor.can_fork = caps is not None and is_set(caps.fork) and caps.fork is not None
+        return [SessionChanged("cursors")]
+
+    def _subagent_update(self, update: SubagentUpdate) -> list[Change]:
+        entry = self.subagents.get(update.session_id)
+        created = entry is None
+        if entry is None:
+            entry = self.subagents[update.session_id] = SubagentEntry(update.session_id)
+            self.entries.append(entry)
+        if is_set(update.title):
+            entry.title = update.title
+        if is_set(update.description):
+            entry.description = update.description
+        if is_set(update.cwd):
+            entry.cwd = update.cwd
+        if is_set(update.additional_directories):
+            entry.additional_directories = list(update.additional_directories or ())
+        if is_set(update.capabilities):
+            caps = update.capabilities
+            entry.can_cancel = caps is not None and is_set(caps.cancel) and caps.cancel is not None
+        if is_set(update.state):
+            entry.activity = update.state.state if update.state is not None else "unknown"
+        return [EntryAdded(entry) if created else EntryChanged(entry)]
+
+    def _session_message(self, update: SessionMessage) -> list[Change]:
+        entry, created = self._message_entry("session", update.message_id)
+        if is_set(update.sender_session_id):
+            entry.sender_session_id = update.sender_session_id
+        if is_set(update.recipient_session_id):
+            entry.recipient_session_id = update.recipient_session_id
+        if is_set(update.content):
+            entry.blocks = list(update.content or ())
+        return [EntryAdded(entry) if created else EntryChanged(entry)]
 
     def set_config_options(self, options: Sequence[SessionConfigOption]) -> list[Change]:
         """Replace the config options (e.g. from a ``session/set_config_option`` result)."""
@@ -487,6 +596,8 @@ class SessionState:
                 terminal.append(_decode(update.output.data))
         if is_set(update.exit_status):
             terminal.exit_status = update.exit_status
+        if is_set(update.size):
+            terminal.size = update.size
         if is_set(update.capabilities):
             caps = update.capabilities
             terminal.can_cancel = (
@@ -514,6 +625,8 @@ class SessionState:
         | OtherStateSessionUpdate,
     ) -> list[Change]:
         changes: list[Change] = []
+        if is_set(update.background):
+            self.background = list(update.background or ())
         match update:
             case RunningStateSessionUpdate():
                 self.activity = "running"
@@ -529,6 +642,8 @@ class SessionState:
                 self.stop_reason = stop
                 error = update.error if is_set(update.error) else None
                 self.last_error = error
+                if is_set(update.usage) and update.usage is not None:
+                    self.last_turn_usage = update.usage
                 if stop == "error" or error is not None:
                     detail = error.message if error is not None else None
                     changes += self.add_notice("error", "The turn failed", detail)
@@ -549,7 +664,8 @@ class SessionState:
 
     def _compaction_update(self, update: CompactionUpdate) -> list[Change]:
         entry, changes = self._compaction(update.compaction_id)
-        entry.status = update.status
+        if is_set(update.status):
+            entry.status = update.status if update.status is not None else "in_progress"
         if is_set(update.summary):
             entry.summary = list(update.summary or ())
         if is_set(update.error):

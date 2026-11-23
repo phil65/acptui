@@ -20,8 +20,6 @@ from aclientp.schema.v2 import (
 
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from aclientp.schema.v2 import ContentBlock
 
 
@@ -136,34 +134,3 @@ def build_prompt(text: str, cwd: Path, options: PromptOptions) -> list[ContentBl
     if not blocks:
         blocks.append(TextContent(text=text))
     return blocks
-
-
-def describe_block(block: ContentBlock) -> str | None:
-    """A one-line description of a non-text block, for display (``None`` for text)."""
-    match block:
-        case TextContent():
-            return None
-        case ResourceLink():
-            return f"link: {block.uri}"
-        case EmbeddedResource():
-            return f"file: {block.resource.uri}"
-        case ImageContent():
-            return f"image ({block.mime_type})"
-        case SkillReference():
-            return f"skill: {block.name}"
-        case _:
-            return block.type
-
-
-def relative_display(path: str, cwd: str | Path) -> str:
-    """A path relative to ``cwd`` if it is inside it, else unchanged."""
-    raw = path.removeprefix("file://")
-    try:
-        return str(Path(raw).relative_to(cwd))
-    except ValueError:
-        return raw
-
-
-def summarize_mentions(blocks: Sequence[ContentBlock]) -> list[str]:
-    """Descriptions of the non-text blocks of a prompt."""
-    return [desc for block in blocks if (desc := describe_block(block)) is not None]

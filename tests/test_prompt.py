@@ -17,8 +17,6 @@ from acptui.protocol.prompt import (
     PromptOptions,
     build_prompt,
     find_mentions,
-    relative_display,
-    summarize_mentions,
 )
 
 
@@ -78,9 +76,3 @@ def test_skills_become_skill_blocks(workdir: Path) -> None:
     assert blocks[1].text == "the code"
     assert isinstance(plain[0], TextContent)
     assert plain[0].text == "/other thing"
-
-
-def test_summaries(workdir: Path) -> None:
-    blocks = build_prompt("@README.md", workdir, PromptOptions())
-    (summary,) = summarize_mentions(blocks)
-    assert relative_display(summary.removeprefix("link: "), workdir) == "README.md"

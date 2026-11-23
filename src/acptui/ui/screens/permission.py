@@ -19,7 +19,7 @@ from textual.content import Content
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
-from acptui.protocol.prompt import relative_display
+from acptui.protocol.content import relative_display
 from acptui.ui.render import tool_icon
 from acptui.ui.widgets.diff import DiffView
 

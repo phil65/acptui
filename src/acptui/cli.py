@@ -28,6 +28,27 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config", type=Path, default=None, help="config file (default: platform config dir)"
     )
+    parser.add_argument(
+        "-o",
+        "--option",
+        action="append",
+        default=[],
+        metavar="ID=VALUE",
+        help="initial session config option, e.g. model=opus or mode=auto (repeatable)",
+    )
+    parser.add_argument(
+        "--add-dir",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="additional workspace root for the session (repeatable)",
+    )
+    parser.add_argument("--system-prompt", metavar="TEXT", help="extra system instructions")
+    parser.add_argument(
+        "--system-prompt-mode",
+        choices=["append", "override"],
+        help="append to the agent's instructions (default) or replace them",
+    )
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
     run = sub.add_parser("run", help="start an agent: a registry id or a command line")
@@ -48,6 +69,9 @@ def _parser() -> argparse.ArgumentParser:
     connect.add_argument("--resume", metavar="SESSION_ID", help="resume this session")
 
     sub.add_parser("agents", help="list known agents and whether they are installed")
+    options = sub.add_parser("options", help="print the session options an agent offers")
+    options.add_argument("agent", help="agent id or program")
+    options.add_argument("args", nargs=argparse.REMAINDER, help="arguments for a program")
     sub.add_parser("config", help="print the config file path")
     return parser
 
@@ -95,6 +119,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         case "config":
             print(options.config or config_path())
             return
+        case "options":
+            spec = _resolve_run(settings, options.agent, options.args)
+            raise SystemExit(print_options(spec, cwd))
         case "run":
             spec = _resolve_run(settings, options.agent, options.args)
             resume = options.resume
@@ -107,9 +134,38 @@ def main(argv: Sequence[str] | None = None) -> None:
                 if spec is None:
                     print(f"unknown default_agent {settings.default_agent!r}", file=sys.stderr)
 
+    from acptui.setup import build_setup, parse_option
     from acptui.ui.app import AcpTui
 
-    AcpTui(settings, cwd, spec, resume_id=resume).run()
+    setup = None
+    if spec is not None:
+        try:
+            overrides = dict(parse_option(item) for item in options.option)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        setup = build_setup(
+            settings,
+            spec,
+            options=overrides,
+            additional_directories=options.add_dir,
+            system_prompt=options.system_prompt,
+            system_prompt_mode=options.system_prompt_mode,
+        )
+    AcpTui(settings, cwd, spec, resume_id=resume, setup=setup).run()
+
+
+def print_options(spec: AgentSpec, cwd: Path) -> int:
+    """Print the config options and commands a new session of the agent would have."""
+    import anyio
+
+    from acptui.headless import describe_options
+
+    try:
+        print(anyio.run(describe_options, spec, cwd))
+    except Exception as exc:  # noqa: BLE001 - shown to the user as an error message
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

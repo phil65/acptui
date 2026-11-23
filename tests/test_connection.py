@@ -37,7 +37,7 @@ async def test_tour_with_permission(demo_spec: AgentSpec, workdir: Path) -> None
         assert connection.agent_name == "Demo agent"
         assert connection.supports_images
         assert connection.supports_embedded_context
-        assert not connection.supports_skills
+        assert connection.supports_skills
         session = await connection.new_session()
         state = events.track(session.session_id, str(workdir))
         response = await connection.prompt(session.session_id, [TextContent(text="/tour")])

@@ -118,6 +118,21 @@ class PromptInput(TextArea):
         self._history_index: int | None = None
         self._completion_context: CompletionContext | None = None
         self.completion_list: CompletionList | None = None
+        self._default_placeholder = str(self.placeholder)
+        self._suggestion = ""
+
+    @property
+    def suggestion(self) -> str:
+        """The agent's suggested next prompt (``tab`` on an empty prompt takes it)."""
+        return self._suggestion
+
+    @suggestion.setter
+    def suggestion(self, text: str) -> None:
+        self._suggestion = text
+        first_line = text.splitlines()[0] if text else ""
+        self.placeholder = (
+            f"{first_line}  (tab: use suggestion)" if text else self._default_placeholder
+        )
 
     # --- Completion -----------------------------------------------------------------
 
@@ -183,6 +198,12 @@ class PromptInput(TextArea):
                 if popup and not self._completion_is_typed() and self._accept_completion():
                     return
                 self._submit()
+                return
+            case "tab" if not popup and not self.text and self._suggestion:
+                event.stop()
+                event.prevent_default()
+                self.load_text(self._suggestion)
+                self.move_cursor(self.document.end)
                 return
             case "tab" if popup:
                 event.stop()

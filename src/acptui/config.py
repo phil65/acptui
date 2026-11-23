@@ -29,6 +29,7 @@ import sys
 import tomllib
 from typing import Literal
 
+from aclientp.schema.v2 import EnvVariable, HttpHeader, McpServerHttp, McpServerStdio
 import platformdirs
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -79,6 +80,9 @@ class AgentSpec(BaseModel):
 
     builtin: bool = False
     """Whether the agent comes from the built-in registry."""
+
+    options: Mapping[str, str | bool] = Field(default_factory=dict)
+    """Initial session config options (``config_id`` -> value), e.g. ``{"model": "opus"}``."""
 
     @model_validator(mode="after")
     def _check_target(self) -> AgentSpec:
@@ -183,6 +187,7 @@ class UserAgent(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     headers: dict[str, str] = Field(default_factory=dict)
     description: str = ""
+    options: dict[str, str | bool] = Field(default_factory=dict)
 
     def to_spec(self, agent_id: str) -> AgentSpec:
         """Build the agent spec."""
@@ -201,7 +206,40 @@ class UserAgent(BaseModel):
             env=self.env,
             headers=self.headers,
             description=self.description,
+            options=self.options,
         )
+
+
+class McpServerConfig(BaseModel):
+    """An MCP server passed to the agent on session setup (stdio or HTTP)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    command: str | None = None
+    """Program of a stdio server (resolved on ``PATH``; ACP requires an absolute path)."""
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str | None = None
+    """URL of an HTTP server."""
+    headers: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_target(self) -> McpServerConfig:
+        if bool(self.command) == bool(self.url):
+            msg = f"MCP server {self.name!r} needs exactly one of `command` and `url`"
+            raise ValueError(msg)
+        return self
+
+    def to_schema(self) -> McpServerStdio | McpServerHttp:
+        """The ACP model (``${VAR}`` is expanded in env and header values)."""
+        if self.url is not None:
+            headers = [HttpHeader(name=k, value=expand_env(v)) for k, v in self.headers.items()]
+            return McpServerHttp(name=self.name, url=self.url, headers=headers)
+        command = self.command or ""
+        resolved = shutil.which(command) or str(Path(command).expanduser().resolve())
+        env = [EnvVariable(name=k, value=expand_env(v)) for k, v in self.env.items()]
+        return McpServerStdio(name=self.name, command=resolved, args=self.args, env=env)
 
 
 class Settings(BaseModel):
@@ -224,6 +262,21 @@ class Settings(BaseModel):
     agents: dict[str, UserAgent] = Field(default_factory=dict)
     """User-defined agents; an id of a built-in agent replaces it."""
 
+    agent_options: dict[str, dict[str, str | bool]] = Field(default_factory=dict)
+    """Initial session config options per agent id (also for built-in agents)."""
+
+    mcp_servers: list[McpServerConfig] = Field(default_factory=list)
+    """MCP servers passed to every session (if the agent supports the transport)."""
+
+    system_prompt: str | None = None
+    """Extra system instructions for every session (if the agent supports it)."""
+
+    system_prompt_mode: Literal["append", "override"] = "append"
+    """Append to the agent's own instructions, or replace them (if supported)."""
+
+    additional_directories: list[str] = Field(default_factory=list)
+    """More workspace roots for every session (if the agent supports it)."""
+
     @model_validator(mode="after")
     def _check_agents(self) -> Settings:
         self.all_agents()  # user agents must be valid specs
@@ -234,6 +287,9 @@ class Settings(BaseModel):
         merged = {spec.id: spec for spec in BUILTIN_AGENTS}
         for agent_id, agent in self.agents.items():
             merged[agent_id] = agent.to_spec(agent_id)
+        for agent_id, options in self.agent_options.items():
+            if (spec := merged.get(agent_id)) is not None:
+                merged[agent_id] = spec.model_copy(update={"options": {**spec.options, **options}})
         return list(merged.values())
 
     def find_agent(self, agent_id: str) -> AgentSpec | None:

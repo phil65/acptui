@@ -1,67 +1,99 @@
-"""The session screen: conversation, prompt and status; drives the agent connection."""
+"""The session screen: conversation, prompt and status; drives the agent connection.
+
+It implements :class:`~acptui.protocol.connection.AgentEvents`: every message the
+agent sends arrives here and is routed to the session it belongs to (the main
+session, or one of its subagent sessions).
+"""
 
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import TYPE_CHECKING, ClassVar
 
 from aclientp.exceptions import RequestError
 from aclientp.schema.v2 import (
     AuthMethodAgent,
     AuthMethodTerminal,
+    DeclineElicitationResponse,
+    FormElicitationRequest,
     SelectSessionConfigOption,
     Skill,
     ToolCallPermissionSubject,
+    UrlElicitationRequest,
 )
 from aclientp.schema.v2.base import is_set
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Vertical
 from textual.content import Content
 from textual.screen import Screen
 from textual.widgets import Footer, Static
 
-from acptui.protocol.connection import AgentConnection, AgentError, UnsupportedProtocolError
-from acptui.protocol.prompt import PromptOptions, build_prompt
-from acptui.protocol.state import (
-    EntryAdded,
-    EntryChanged,
-    MessageEntry,
-    SessionChanged,
-    SessionState,
-    TerminalChanged,
+from acptui.protocol.connection import (
+    AgentConnection,
+    AgentError,
+    SessionSetup,
+    UnsupportedProtocolError,
 )
-from acptui.ui.screens.dialogs import ConfigScreen, HelpScreen, SessionListScreen, next_select_value
+from acptui.protocol.content import content_markdown
+from acptui.protocol.prompt import PromptOptions, build_prompt
+from acptui.protocol.state import EntryAdded, MessageEntry, SessionState
+from acptui.ui.screens.dialogs import (
+    ConfigScreen,
+    ForkScreen,
+    HelpScreen,
+    SessionListScreen,
+    TextInputScreen,
+    next_select_value,
+)
+from acptui.ui.screens.elicitation import FormElicitationScreen, UrlElicitationScreen
 from acptui.ui.screens.log import LogScreen
 from acptui.ui.screens.permission import PermissionScreen, cancelled
-from acptui.ui.widgets.blocks import AgentMessageView, ThoughtView, ToolCallView, make_view
+from acptui.ui.screens.providers import ProvidersScreen
+from acptui.ui.widgets.conversation import ConversationView
 from acptui.ui.widgets.prompt import CompletionList, PromptInput
 from acptui.ui.widgets.status import StatusBar
-from acptui.ui.widgets.terminal import TerminalView
 
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from pathlib import Path
 
     from aclientp.schema.v2 import (
+        AuthStatusUpdateNotification,
+        AvailableCommand,
+        CompleteElicitationNotification,
+        CreateElicitationRequest,
+        CreateElicitationResponse,
         RequestPermissionRequest,
         RequestPermissionResponse,
+        SessionConfigOption,
         UpdateSessionNotification,
     )
+    from aclientp.schema.v2.auth import AuthAccount
     from textual.app import ComposeResult
+    from textual.screen import ModalScreen
     from textual.widget import Widget
 
     from acptui.config import AgentSpec, DiffViewMode
-    from acptui.protocol.state import Change, Entry
+    from acptui.protocol.state import SessionActivity
     from acptui.ui.agent_log import AgentLog
     from acptui.ui.screens.dialogs import ConfigChoice
+    from acptui.ui.widgets.blocks import SubagentView, ToolCallView
+    from acptui.ui.widgets.terminal import TerminalView
 
 
 DIFF_MODES: tuple[DiffViewMode, ...] = ("unified", "split", "auto")
+ACTIVITIES: dict[str, SessionActivity] = {
+    "idle": "idle",
+    "running": "running",
+    "requires_action": "requires_action",
+}
 STDERR_TAIL = 12
 
 
 class ErrorPanel(Static):
-    """A fatal problem with the agent (it failed to start, crashed or is unsupported)."""
+    """A problem with the agent (it failed to start, crashed, is unsupported, ...)."""
 
     DEFAULT_CSS = """
     ErrorPanel {
@@ -74,16 +106,51 @@ class ErrorPanel(Static):
     """
 
 
-class Conversation(VerticalScroll):
-    """The scrolling timeline."""
+class SubagentScreen(Screen[None]):
+    """The conversation of a subagent session (read-only)."""
+
+    BINDINGS: ClassVar = [
+        Binding("escape", "close", "Back"),
+        Binding("x", "cancel_subagent", "Cancel subagent"),
+    ]
 
     DEFAULT_CSS = """
-    Conversation {
-        height: 1fr;
-        padding: 0 1;
-        scrollbar-size-vertical: 1;
-    }
+    SubagentScreen { #subagent-title { height: 1; background: $panel; padding: 0 1; } }
     """
+
+    def __init__(self, parent: SessionScreen, state: SessionState, title: str) -> None:
+        super().__init__()
+        self.parent_screen = parent
+        self.state = state
+        self.title_text = title
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            Content.assemble(("subagent: ", "$text-muted"), (self.title_text, "bold")),
+            id="subagent-title",
+        )
+        yield ConversationView(
+            self.parent_screen.agent_log,
+            diff_mode=self.parent_screen.diff_mode,
+            expand_thoughts=self.parent_screen.expand_thoughts,
+        )
+        yield Footer(compact=True)
+
+    @property
+    def conversation(self) -> ConversationView:
+        """The child's conversation."""
+        return self.query_one(ConversationView)
+
+    def on_mount(self) -> None:
+        self.conversation.show(self.state)
+
+    def action_close(self) -> None:
+        """Back to the parent session."""
+        self.dismiss(None)
+
+    def action_cancel_subagent(self) -> None:
+        """Cancel the subagent's work (if the parent allows it)."""
+        self.parent_screen.cancel_subagent(self.state.session_id)
 
 
 class SessionScreen(Screen[None]):
@@ -103,8 +170,10 @@ class SessionScreen(Screen[None]):
         Binding("ctrl+o", "options", "Options"),
         Binding("shift+tab", "next_mode", "Mode", show=False),
         Binding("ctrl+d", "toggle_diff", "Diff view", show=False),
+        Binding("ctrl+f", "fork_session", "Fork", show=False),
         Binding("ctrl+l", "show_log", "Log"),
         Binding("f1", "help", "Help"),
+        Binding("f2", "rename_session", "Rename", show=False),
         Binding("f5", "restart", "Restart", show=False),
         Binding("pageup", "scroll_conversation(-1)", show=False, priority=True),
         Binding("pagedown", "scroll_conversation(1)", show=False, priority=True),
@@ -119,6 +188,7 @@ class SessionScreen(Screen[None]):
         diff_mode: DiffViewMode = "auto",
         expand_thoughts: bool = False,
         resume_id: str | None = None,
+        setup: SessionSetup | None = None,
     ) -> None:
         super().__init__()
         self.spec = spec
@@ -127,18 +197,28 @@ class SessionScreen(Screen[None]):
         self.diff_mode: DiffViewMode = diff_mode
         self.expand_thoughts = expand_thoughts
         self.resume_id = resume_id
+        self.setup = setup or SessionSetup()
         self.connection: AgentConnection | None = None
         self.state: SessionState | None = None
+        """The session shown in this screen."""
+        self.sessions: dict[str, SessionState] = {}
+        """Every session the agent told us about: the main one and subagent sessions."""
         self.connected = False
-        self._views: dict[Entry, Widget] = {}
-        self._queue: asyncio.Queue[list[Change] | None] = asyncio.Queue()
-        self._permissions: set[PermissionScreen] = set()
         self.closing = False
+        self._dialogs: set[Widget] = set()
+        """Open permission and elicitation dialogs (closed when the agent goes away)."""
+        self._url_elicitations: dict[str, UrlElicitationScreen] = {}
+        self._subagent_screens: dict[str, SubagentScreen] = {}
 
     # --- Layout ---------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
-        yield Conversation(id="conversation")
+        yield ConversationView(
+            self.agent_log,
+            diff_mode=self.diff_mode,
+            expand_thoughts=self.expand_thoughts,
+            id="conversation",
+        )
         completion_list = CompletionList()
         prompt = PromptInput(self.cwd)
         prompt.completion_list = completion_list
@@ -149,9 +229,9 @@ class SessionScreen(Screen[None]):
         yield Footer(compact=True)
 
     @property
-    def conversation(self) -> Conversation:
-        """The timeline container."""
-        return self.query_one(Conversation)
+    def conversation(self) -> ConversationView:
+        """The main conversation."""
+        return self.query_one("#conversation", ConversationView)
 
     @property
     def prompt(self) -> PromptInput:
@@ -164,12 +244,25 @@ class SessionScreen(Screen[None]):
         return self.query_one(StatusBar)
 
     def on_mount(self) -> None:
-        self.conversation.anchor()
         self.status.agent = self.spec.name
         self.status.refresh_status()
         self.prompt.focus()
-        self.run_worker(self._render_loop(), name="render", group="render")
         self.start_agent()
+
+    def call[*Ts](self, func: Callable[[*Ts], Awaitable[object]], *args: *Ts) -> None:
+        """Call ``func(*args)`` in the background (see :meth:`spawn`)."""
+        self.spawn(func(*args))
+
+    def spawn(self, call: Awaitable[object], group: str = "rpc") -> None:
+        """Run a call in the background; failures are shown, never raised into the UI."""
+
+        async def run() -> None:
+            try:
+                await call
+            except (RequestError, ConnectionError, AgentError) as exc:
+                self.notify(str(exc), severity="error")
+
+        self.run_worker(run(), group=group, exit_on_error=False)
 
     # --- Agent lifecycle ------------------------------------------------------------
 
@@ -191,6 +284,8 @@ class SessionScreen(Screen[None]):
                 )
                 self.status.agent = f"{connection.agent_name} {connection.agent_version}".strip()
                 self._set_connection_state("connected")
+                if connection.supports_auth_status:
+                    self.spawn(self._refresh_auth_status())
                 await self._start_session(self.resume_id)
                 await connection.wait_closed()
             if not self.closing:
@@ -205,7 +300,7 @@ class SessionScreen(Screen[None]):
             if not self.closing:
                 self._fatal(f"Connection to the agent failed: {exc}", title="Agent error")
         finally:
-            self._cancel_permissions()
+            self._close_dialogs()
             if not self.closing:
                 self._set_connection_state("disconnected")
 
@@ -215,17 +310,34 @@ class SessionScreen(Screen[None]):
             if resume_id is not None:
                 await self._resume(resume_id)
                 return
-            response = await connection.new_session()
+            response = await connection.new_session(self.setup)
         except RequestError as exc:
             self._session_error(exc)
             return
-        state = self._new_state(response.session_id)
-        changes = []
-        if is_set(response.config_options):
-            changes += state.set_config_options(response.config_options)
-        if is_set(response.available_commands):
-            changes += state.set_commands(response.available_commands)
-        self._queue.put_nowait(changes)
+        self._show_session(
+            response.session_id, response.config_options, response.available_commands
+        )
+
+    def _show_session(
+        self,
+        session_id: str,
+        options: list[SessionConfigOption] | object,
+        commands: list[AvailableCommand] | object,
+        *,
+        replaying: bool = False,
+    ) -> SessionState:
+        state = SessionState(session_id, str(self.cwd), replaying=replaying)
+        self.sessions[session_id] = state
+        self.state = state
+        self.status.state = state
+        self.conversation.show(state)
+        if isinstance(options, list) and options:
+            self.conversation.push(state.set_config_options(options))
+        if isinstance(commands, list):
+            self.conversation.push(state.set_commands(commands))
+            self.prompt.commands = list(state.commands)
+        self.status.refresh_status()
+        return state
 
     def _session_error(self, exc: RequestError) -> None:
         connection = self._connection()
@@ -249,29 +361,21 @@ class SessionScreen(Screen[None]):
                 fatal=False,
             )
 
-    def _new_state(self, session_id: str, *, replaying: bool = False) -> SessionState:
-        state = SessionState(session_id, str(self.cwd), replaying=replaying)
-        self.state = state
-        self.status.state = state
-        self.status.refresh_status()
-        return state
-
     async def _resume(self, session_id: str) -> None:
         connection = self._connection()
-        await self._clear_conversation()
-        state = self._new_state(session_id, replaying=True)
+        state = self._show_session(session_id, None, None, replaying=True)
         try:
-            response = await connection.resume_session(session_id)
+            response = await connection.resume_session(session_id, setup=self.setup)
         except RequestError as exc:
             self._fatal(f"Could not resume the session: {exc}", title="Session error", fatal=False)
             return
         state.replaying = False
-        changes = []
         if is_set(response.config_options):
-            changes += state.set_config_options(response.config_options)
+            self.conversation.push(state.set_config_options(response.config_options))
         if is_set(response.available_commands):
-            changes += state.set_commands(response.available_commands)
-        self._queue.put_nowait(changes)
+            self.conversation.push(state.set_commands(response.available_commands))
+        if connection.supports_status:
+            self.spawn(self.refresh_session_status())
 
     def _connection(self) -> AgentConnection:
         if self.connection is None:
@@ -301,33 +405,92 @@ class SessionScreen(Screen[None]):
 
     # --- AgentEvents ----------------------------------------------------------------
 
+    def _state_for(self, session_id: str) -> SessionState:
+        """The state of a session; sessions we did not create are subagent sessions."""
+        state = self.sessions.get(session_id)
+        if state is None:
+            parent = next((s for s in self.sessions.values() if session_id in s.subagents), None)
+            state = SessionState(
+                session_id, str(self.cwd), parent_id=parent.session_id if parent else None
+            )
+            self.sessions[session_id] = state
+        return state
+
     def session_update(self, notification: UpdateSessionNotification) -> None:
-        state = self.state
-        if state is None or notification.session_id != state.session_id:
-            return
-        self._queue.put_nowait(state.apply(notification.update))
+        state = self._state_for(notification.session_id)
+        changes = state.apply(notification.update)
+        if state is self.state:
+            self.conversation.push(changes)
+        elif (
+            screen := self._subagent_screens.get(state.session_id)
+        ) is not None and screen.is_attached:
+            screen.conversation.push(changes)
 
     async def request_permission(
         self, request: RequestPermissionRequest
     ) -> RequestPermissionResponse:
-        state = self.state
-        if state is None or request.session_id != state.session_id:
-            return cancelled()
+        state = self._state_for(request.session_id)
         if is_set(request.subject) and isinstance(request.subject, ToolCallPermissionSubject):
-            self._queue.put_nowait(state.apply_tool_call(request.subject.tool_call))
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[RequestPermissionResponse] = loop.create_future()
+            changes = state.apply_tool_call(request.subject.tool_call)
+            if state is self.state:
+                self.conversation.push(changes)
         screen = PermissionScreen(request, state.cwd, self.diff_mode)
-        self._permissions.add(screen)
+        self.app.bell()
+        return await self._ask(screen, cancelled())
 
-        def done(result: RequestPermissionResponse | None) -> None:
-            self._permissions.discard(screen)
+    async def _ask[T](self, screen: ModalScreen[T], default: T) -> T:
+        """Show a dialog and wait for its answer.
+
+        If the agent cancels the request (``$/cancel_request``) or the connection ends,
+        the dialog is closed.
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[T] = loop.create_future()
+        self._dialogs.add(screen)
+
+        def done(result: T | None) -> None:
             if not future.done():
-                future.set_result(result if result is not None else cancelled())
+                future.set_result(result if result is not None else default)
 
         self.app.push_screen(screen, callback=done)
-        self.app.bell()
-        return await future
+        try:
+            return await future
+        except asyncio.CancelledError:
+            if screen.is_attached:
+                screen.dismiss(default)
+            raise
+        finally:
+            self._dialogs.discard(screen)
+
+    async def create_elicitation(
+        self, request: CreateElicitationRequest
+    ) -> CreateElicitationResponse:
+        from acptui.ui.screens.elicitation import cancelled_elicitation
+
+        match request:
+            case FormElicitationRequest():
+                return await self._ask(FormElicitationScreen(request), cancelled_elicitation())
+            case UrlElicitationRequest():
+                screen = UrlElicitationScreen(request)
+                self._url_elicitations[request.elicitation_id] = screen
+                try:
+                    return await self._ask(screen, cancelled_elicitation())
+                finally:
+                    self._url_elicitations.pop(request.elicitation_id, None)
+            case _:
+                self.notify(f"Unsupported elicitation mode {request.mode!r}", severity="warning")
+                return DeclineElicitationResponse()
+
+    def complete_elicitation(self, notification: CompleteElicitationNotification) -> None:
+        if (screen := self._url_elicitations.get(notification.elicitation_id)) is not None:
+            screen.complete()
+
+    def auth_status_update(self, notification: AuthStatusUpdateNotification) -> None:
+        accounts = notification.accounts if is_set(notification.accounts) else []
+        self._show_auth(notification.state, accounts)
+
+    def ext_notification(self, method: str, params: str) -> None:
+        self.agent_log.add("info", f"extension notification {method}: {params}")
 
     def stderr_line(self, line: str) -> None:
         self.agent_log.add("stderr", line)
@@ -335,71 +498,61 @@ class SessionScreen(Screen[None]):
     def traffic(self, direction: str, text: str) -> None:
         self.agent_log.add("incoming" if direction == "incoming" else "outgoing", text)
 
-    def _cancel_permissions(self) -> None:
-        for screen in list(self._permissions):
-            screen.cancel()
-        self._permissions.clear()
+    def _close_dialogs(self) -> None:
+        for screen in list(self._dialogs):
+            if isinstance(screen, PermissionScreen | FormElicitationScreen | UrlElicitationScreen):
+                screen.cancel()
+        self._dialogs.clear()
 
-    # --- Rendering ------------------------------------------------------------------
-
-    async def _render_loop(self) -> None:
-        while True:
-            changes = await self._queue.get()
-            if changes is None:
-                return
-            for change in changes:
-                try:
-                    await self._render_change(change)
-                except Exception as exc:  # noqa: BLE001 - one bad update must not kill the view
-                    self.agent_log.add(
-                        "error", f"render failed for {type(change).__name__}: {exc!r}"
-                    )
-
-    async def _render_change(self, change: Change) -> None:
-        state = self.state
-        if state is None:
-            return
-        match change:
-            case EntryAdded(entry=entry):
-                view = make_view(entry, state, self.diff_mode, expand_thoughts=self.expand_thoughts)
-                self._views[entry] = view
-                await self.conversation.mount(view)
-            case EntryChanged(entry=entry, appended=appended):
-                view = self._views.get(entry)
-                if isinstance(view, AgentMessageView | ThoughtView):
-                    if appended is not None:
-                        await view.append_text(appended)
-                    else:
-                        await view.refresh_entry()
-                elif isinstance(view, ToolCallView):
-                    await view.refresh_entry()
-                elif view is not None and hasattr(view, "refresh_entry"):
-                    refresh = view.refresh_entry
-                    if callable(refresh):
-                        refresh()
-            case TerminalChanged(terminal=terminal):
-                for terminal_view in self.query(TerminalView):
-                    if terminal_view.terminal is terminal:
-                        terminal_view.refresh_terminal()
-            case SessionChanged(field=field):
-                await self._session_changed(field)
-
-    async def _session_changed(self, field: str) -> None:
-        state = self.state
-        if state is None:
-            return
-        if field == "commands":
-            self.prompt.commands = list(state.commands)
-        if field == "activity" and not state.running:
-            for view in self.query(AgentMessageView):
-                await view.finish()
-            for thought in self.query(ThoughtView):
-                await thought.finish()
+    def _show_auth(self, state: str, accounts: list[AuthAccount] | object) -> None:
+        label = "not logged in" if state == "unauthenticated" else ""
+        if isinstance(accounts, list):
+            active = next(
+                (a for a in accounts if is_set(a.active) and a.active),
+                accounts[0] if accounts else None,
+            )
+            if active is not None:
+                label = active.label
+        self.status.account = label
         self.status.refresh_status()
 
-    async def _clear_conversation(self) -> None:
-        self._views.clear()
-        await self.conversation.remove_children()
+    async def _refresh_auth_status(self) -> None:
+        response = await self._connection().auth_status()
+        accounts = response.accounts if is_set(response.accounts) else []
+        self._show_auth(response.state, list(accounts))
+
+    async def refresh_session_status(self) -> None:
+        state = self.state
+        if state is None:
+            return
+        response = await self._connection().session_status(state.session_id)
+        snapshot = response.state if is_set(response.state) else None
+        if snapshot is not None:
+            state.activity = ACTIVITIES.get(snapshot.state, "unknown")
+        self.notify(f"Session is {response.status}", timeout=2)
+        self.status.refresh_status()
+
+    # --- Conversation events --------------------------------------------------------
+
+    def on_conversation_view_session_field_changed(
+        self, message: ConversationView.SessionFieldChanged
+    ) -> None:
+        state = self.state
+        if state is None:
+            return
+        if message.field == "commands":
+            self.prompt.commands = list(state.commands)
+        if message.field == "suggestions":
+            self._show_suggestion()
+        self.status.refresh_status()
+
+    def _show_suggestion(self) -> None:
+        state = self.state
+        suggestion = state.suggestions[0] if state is not None and state.suggestions else None
+        text = (
+            content_markdown(suggestion.prompt, self.cwd).strip() if suggestion is not None else ""
+        )
+        self.prompt.suggestion = text
 
     # --- Prompt ---------------------------------------------------------------------
 
@@ -418,8 +571,9 @@ class SessionScreen(Screen[None]):
         blocks = build_prompt(message.text, self.cwd, options)
         changes = state.add_local_user_message(blocks)
         entry = changes[0].entry if changes and isinstance(changes[0], EntryAdded) else None
-        self._queue.put_nowait(changes)
+        self.conversation.push(changes)
         self.prompt.load_text("")
+        self.prompt.suggestion = ""
         self.conversation.anchor()
         if isinstance(entry, MessageEntry):
             self.run_worker(self._send_prompt(state, entry), group="rpc", exit_on_error=False)
@@ -429,7 +583,7 @@ class SessionScreen(Screen[None]):
         try:
             response = await connection.prompt(state.session_id, entry.blocks)
         except (RequestError, ConnectionError) as exc:
-            self._queue.put_nowait(
+            self.conversation.push(
                 state.add_notice("error", "The agent rejected the prompt", str(exc))
             )
             return
@@ -445,8 +599,7 @@ class SessionScreen(Screen[None]):
         if not state.running:
             self.notify("Nothing to cancel", timeout=2)
             return
-        self._cancel_permissions()
-        self.run_worker(self.connection.cancel(state.session_id), group="rpc", exit_on_error=False)
+        self.spawn(self.connection.cancel(state.session_id))
         self.notify("Cancelling…", timeout=2)
 
     def action_new_session(self) -> None:
@@ -459,8 +612,6 @@ class SessionScreen(Screen[None]):
         connection = self._connection()
         if self.state is not None:
             await connection.close_session(self.state.session_id)
-        await self._clear_conversation()
-        self.state = None
         await self._start_session(None)
         self.prompt.focus()
 
@@ -477,6 +628,58 @@ class SessionScreen(Screen[None]):
 
         self.app.push_screen(SessionListScreen(self.connection), callback=chosen)
 
+    def action_fork_session(self) -> None:
+        """Fork the session (whole, or at a cursor the agent offers)."""
+        connection = self.connection
+        state = self.state
+        if connection is None or state is None:
+            return
+        if not connection.supports_fork:
+            self.notify("The agent cannot fork sessions", timeout=2)
+            return
+
+        def chosen(choice: tuple[str | None] | None) -> None:
+            if choice is not None:
+                self.run_worker(
+                    self._fork(state.session_id, choice[0]),
+                    group="session",
+                    exclusive=True,
+                    exit_on_error=False,
+                )
+
+        self.app.push_screen(ForkScreen(state), callback=chosen)
+
+    async def _fork(self, session_id: str, cursor_id: str | None) -> None:
+        try:
+            response = await self._connection().fork_session(session_id, cursor_id, self.setup)
+        except (RequestError, ConnectionError) as exc:
+            self.notify(f"Could not fork: {exc}", severity="error")
+            return
+        self._show_session(
+            response.session_id, response.config_options, response.available_commands
+        )
+        self.notify("Forked: now in the new session", timeout=3)
+
+    def action_rename_session(self) -> None:
+        """Rename the session."""
+        state = self.state
+        connection = self.connection
+        if state is None or connection is None:
+            return
+        if not connection.supports_title:
+            self.notify("The agent cannot rename sessions", timeout=2)
+            return
+
+        def chosen(title: str | None) -> None:
+            if title:
+                self.spawn(self._rename(state, title))
+
+        self.app.push_screen(TextInputScreen("Session title", state.title or ""), callback=chosen)
+
+    async def _rename(self, state: SessionState, title: str) -> None:
+        state.title = await self._connection().set_title(state.session_id, title)
+        self.status.refresh_status()
+
     def action_options(self) -> None:
         """Show the session options."""
         if self.state is None:
@@ -488,7 +691,7 @@ class SessionScreen(Screen[None]):
     def _config_chosen(self, choice: ConfigChoice | None) -> None:
         if choice is not None:
             config_id, value = choice
-            self.run_worker(self.set_config(config_id, value), group="rpc", exit_on_error=False)
+            self.spawn(self.set_config(config_id, value))
 
     async def set_config(self, config_id: str, value: str | bool) -> None:
         """Set a config option of the session."""
@@ -501,7 +704,7 @@ class SessionScreen(Screen[None]):
         except (RequestError, ConnectionError) as exc:
             self.notify(f"Could not change the option: {exc}", severity="error")
             return
-        self._queue.put_nowait(state.set_config_options(response.config_options))
+        self.conversation.push(state.set_config_options(response.config_options))
 
     def action_next_mode(self) -> None:
         """Switch to the next value of the mode option."""
@@ -521,17 +724,12 @@ class SessionScreen(Screen[None]):
         if option is None:
             self.notify("The agent has no mode option", timeout=2)
             return
-        self.run_worker(
-            self.set_config(option.config_id, next_select_value(option)),
-            group="rpc",
-            exit_on_error=False,
-        )
+        self.spawn(self.set_config(option.config_id, next_select_value(option)))
 
     def action_toggle_diff(self) -> None:
         """Cycle the diff view: unified, split, auto."""
         self.diff_mode = DIFF_MODES[(DIFF_MODES.index(self.diff_mode) + 1) % len(DIFF_MODES)]
-        for view in self.query(ToolCallView):
-            view.set_diff_mode(self.diff_mode)
+        self.conversation.set_diff_mode(self.diff_mode)
         self.notify(f"Diff view: {self.diff_mode}", timeout=2)
 
     def action_show_log(self) -> None:
@@ -542,6 +740,13 @@ class SessionScreen(Screen[None]):
         """Show the help."""
         self.app.push_screen(HelpScreen())
 
+    def action_providers(self) -> None:
+        """Configure the agent's LLM providers."""
+        if self.connection is not None and self.connection.supports_providers:
+            self.app.push_screen(ProvidersScreen(self.connection))
+        else:
+            self.notify("The agent has no configurable providers", timeout=2)
+
     def action_restart(self) -> None:
         """Restart the agent (and start a new session)."""
         self.run_worker(self._restart(), group="session", exclusive=True, exit_on_error=False)
@@ -551,9 +756,10 @@ class SessionScreen(Screen[None]):
         self.workers.cancel_group(self, "agent")
         await asyncio.sleep(0)
         self.closing = False
-        await self._clear_conversation()
+        self.sessions.clear()
         self.state = None
         self.status.state = None
+        self.conversation.show(None)
         self.start_agent()
 
     def action_scroll_conversation(self, direction: int) -> None:
@@ -566,20 +772,40 @@ class SessionScreen(Screen[None]):
     def on_tool_call_view_cancel_requested(self, message: ToolCallView.CancelRequested) -> None:
         state = self.state
         if state is not None and self.connection is not None:
-            self.run_worker(
-                self.connection.cancel_tool_call(state.session_id, message.tool_call_id),
-                group="rpc",
-                exit_on_error=False,
-            )
+            self.spawn(self.connection.cancel_tool_call(state.session_id, message.tool_call_id))
 
     def on_terminal_view_cancel_requested(self, message: TerminalView.CancelRequested) -> None:
         state = self.state
         if state is not None and self.connection is not None:
-            self.run_worker(
-                self.connection.cancel_terminal(state.session_id, message.terminal_id),
-                group="rpc",
-                exit_on_error=False,
-            )
+            self.spawn(self.connection.cancel_terminal(state.session_id, message.terminal_id))
+
+    def on_subagent_view_open(self, message: SubagentView.Open) -> None:
+        state = self._state_for(message.session_id)
+        parent = self.state
+        child = parent.subagents.get(message.session_id) if parent is not None else None
+        screen = SubagentScreen(
+            self, state, child.display_title if child is not None else message.session_id
+        )
+        self._subagent_screens[message.session_id] = screen
+
+        def closed(_: None) -> None:
+            self._subagent_screens.pop(message.session_id, None)
+
+        self.app.push_screen(screen, callback=closed)
+
+    def on_subagent_view_cancel_requested(self, message: SubagentView.CancelRequested) -> None:
+        self.cancel_subagent(message.session_id)
+
+    def cancel_subagent(self, session_id: str) -> None:
+        """Cancel a subagent's work, if its parent allows it."""
+        parent = self.state
+        child = parent.subagents.get(session_id) if parent is not None else None
+        if child is None or not child.can_cancel or self.connection is None:
+            self.notify("This subagent cannot be cancelled", timeout=2)
+            return
+        self.spawn(self.connection.cancel(session_id))
+
+    # --- Authentication -------------------------------------------------------------
 
     async def login(self, method_id: str) -> None:
         """Log in with an auth method, then retry creating a session."""
@@ -593,12 +819,25 @@ class SessionScreen(Screen[None]):
             except (RequestError, ConnectionError) as exc:
                 self.notify(f"Login failed: {exc}", severity="error")
                 return
-        await self._clear_conversation()
-        await self._start_session(None)
+        self.notify("Logged in", timeout=2)
+        if connection.supports_auth_status:
+            await self._refresh_auth_status()
+        if self.state is None:
+            await self._start_session(None)
+
+    async def logout(self) -> None:
+        """Log out of the agent."""
+        connection = self._connection()
+        try:
+            await connection.logout()
+        except (RequestError, ConnectionError) as exc:
+            self.notify(f"Logout failed: {exc}", severity="error")
+            return
+        self.notify("Logged out", timeout=2)
+        if connection.supports_auth_status:
+            await self._refresh_auth_status()
 
     async def _terminal_login(self, method: AuthMethodTerminal) -> None:
-        import os
-
         if not self.spec.command:
             self.notify("Terminal login needs a local agent", severity="error")
             return
@@ -615,6 +854,6 @@ class SessionScreen(Screen[None]):
     async def shutdown(self) -> None:
         """Stop the agent (on quit)."""
         self.closing = True
-        self._cancel_permissions()
-        self._queue.put_nowait(None)
+        self._close_dialogs()
+        self.conversation.stop()
         self.workers.cancel_group(self, "agent")

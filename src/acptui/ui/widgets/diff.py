@@ -18,8 +18,8 @@ from textual.highlight import highlight
 from textual.reactive import reactive
 from textual.widgets import Static
 
+from acptui.protocol.content import relative_display
 from acptui.protocol.diff import parse_patch, side_by_side
-from acptui.protocol.prompt import relative_display
 
 
 if TYPE_CHECKING:
@@ -194,8 +194,12 @@ class DiffView(Vertical):
         self.diff = diff
         self.cwd = cwd
         self.files: list[FileDiff] = []
+        self.raw_patch: str | None = None
         if is_set(diff.patch) and diff.patch is not None:
-            self.files = parse_patch(diff.patch.text)
+            if diff.patch.format == "git_patch":
+                self.files = parse_patch(diff.patch.text)
+            else:  # a format acptui does not know: show the text as is
+                self.raw_patch = diff.patch.text
         self.set_reactive(DiffView.mode, mode)
         self.set_reactive(DiffView.split, mode == "split")
 
@@ -206,10 +210,21 @@ class DiffView(Vertical):
                 old, new = change_paths(change)
                 path = relative_display(new or "?", self.cwd)
                 source = f"{relative_display(old, self.cwd)} → " if old else ""
+                file_type = (
+                    change.file_type if is_set(change.file_type) and change.file_type else None
+                )
+                kind = f" ({file_type})" if file_type and file_type != "text" else ""
                 yield Static(
-                    Content.assemble((f"{operation} ", "bold $accent"), source, (path, "bold")),
+                    Content.assemble(
+                        (f"{operation} ", "bold $accent"),
+                        source,
+                        (path, "bold"),
+                        (kind, "$text-muted"),
+                    ),
                     classes="diff-header",
                 )
+            if self.raw_patch is not None:
+                yield Static(Content(self.raw_patch), classes="diff-lines")
             return
         operations = {change_paths(c)[1]: c.operation for c in self.diff.changes}
         for file in self.files:

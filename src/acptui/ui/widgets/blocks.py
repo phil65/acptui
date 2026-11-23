@@ -11,8 +11,6 @@ from aclientp.schema.v2 import (
     Content as ToolContent,
     Diff,
     EmbeddedResource,
-    ImageContent,
-    ResourceLink,
     SessionReference,
     Terminal,
     TextContent,
@@ -27,12 +25,13 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Collapsible, Markdown, Static
 
-from acptui.protocol.prompt import describe_block, relative_display
+from acptui.protocol.content import content_markdown, describe_block, relative_display
 from acptui.protocol.state import (
     CompactionEntry,
     MessageEntry,
     NoticeEntry,
     PlanEntry,
+    SubagentEntry,
     ToolCallEntry,
     blocks_text,
 )
@@ -59,15 +58,7 @@ COLLAPSED_KINDS = frozenset({"read", "search", "fetch", "think"})
 """Tool kinds whose content starts collapsed (it is mostly noise)."""
 
 
-def _content_markdown(blocks: list[ContentBlock], cwd: str) -> str:
-    """Markdown for message content: text as is, other blocks as short notes."""
-    parts: list[str] = []
-    for block in blocks:
-        if isinstance(block, TextContent):
-            parts.append(block.text)
-        elif (desc := describe_block(block)) is not None:
-            parts.append(f"\n\n`[{relative_display(desc, cwd)}]`\n\n")
-    return "".join(parts)
+_content_markdown = content_markdown
 
 
 class UserMessageView(Static):
@@ -92,11 +83,9 @@ class UserMessageView(Static):
     def _message_content(self) -> Content:
         lines: list[Content] = [Content(blocks_text(self.entry.blocks) or " ")]
         lines.extend(
-            Content.assemble(
-                ("  + ", "$text-muted"), (relative_display(desc, self.cwd), "italic $text-muted")
-            )
+            Content.assemble(("  + ", "$text-muted"), (desc, "italic $text-muted"))
             for block in self.entry.blocks
-            if (desc := describe_block(block)) is not None
+            if (desc := describe_block(block, self.cwd)) is not None
         )
         return Content("\n").join(lines)
 
@@ -116,6 +105,24 @@ class StreamingMarkdown(Markdown):
         super().__init__(markdown, classes=classes)
         self._ready = asyncio.Event()
         self._stream: MarkdownStream | None = None
+        self._shown = markdown
+
+    async def sync(self, markdown: str) -> None:
+        """Show ``markdown``: stream the new part if it extends what is shown, else replace.
+
+        Rendering lags behind the session state (several chunks may have been applied
+        before the view exists), so views sync to the full text instead of appending
+        each chunk.
+        """
+        if markdown == self._shown:
+            return
+        if markdown.startswith(self._shown):
+            delta = markdown[len(self._shown) :]
+            self._shown = markdown
+            await self.append_text(delta)
+        else:
+            self._shown = markdown
+            await self.replace_text(markdown)
 
     def on_mount(self) -> None:
         # Markdown's own mount handler (which shows the initial content) runs after
@@ -160,8 +167,8 @@ class AgentMessageView(StreamingMarkdown):
         self.cwd = cwd
 
     async def refresh_entry(self) -> None:
-        """Re-render all content (after a replacement)."""
-        await self.replace_text(_content_markdown(self.entry.blocks, self.cwd))
+        """Show the entry's current content (streaming what was appended)."""
+        await self.sync(_content_markdown(self.entry.blocks, self.cwd))
 
 
 class ThoughtView(Collapsible):
@@ -186,13 +193,9 @@ class ThoughtView(Collapsible):
         self.markdown = StreamingMarkdown(_content_markdown(entry.blocks, cwd))
         super().__init__(self.markdown, title="Thinking…", collapsed=not expanded)
 
-    async def append_text(self, text: str) -> None:
-        """Append streamed text."""
-        await self.markdown.append_text(text)
-
     async def refresh_entry(self) -> None:
-        """Re-render all content."""
-        await self.markdown.replace_text(_content_markdown(self.entry.blocks, self.cwd))
+        """Show the entry's current content (streaming what was appended)."""
+        await self.markdown.sync(_content_markdown(self.entry.blocks, self.cwd))
 
     async def finish(self) -> None:
         """Flush streamed text; the title then says the thinking is done."""
@@ -220,6 +223,7 @@ class ToolCallHeader(Static, can_focus=True):
     BINDINGS: ClassVar = [
         Binding("enter,space", "toggle_details", "Toggle details", show=False),
         Binding("x", "cancel", "Cancel tool call", show=False),
+        Binding("r", "toggle_raw", "Raw input/output", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -244,6 +248,13 @@ class ToolCallHeader(Static, can_focus=True):
             and not parent.entry.finished
         ):
             parent.post_message(ToolCallView.CancelRequested(parent.entry.tool_call_id))
+
+    async def action_toggle_raw(self) -> None:
+        parent = self.parent
+        if isinstance(parent, ToolCallView):
+            parent.show_raw = not parent.show_raw
+            parent.expanded = True
+            await parent.rebuild()
 
     def on_click(self, event: Click) -> None:
         event.stop()
@@ -280,6 +291,7 @@ class ToolCallView(Vertical):
         self.state = state
         self.diff_mode: DiffViewMode = diff_mode
         self._content_key: tuple[int, ...] = ()
+        self.show_raw = False
         self._user_toggled = False
         self.set_reactive(ToolCallView.expanded, self._should_expand())
 
@@ -305,7 +317,7 @@ class ToolCallView(Vertical):
     def _header(self) -> Content:
         entry = self.entry
         arrow = "▼" if self.expanded else "▶"
-        has_body = bool(entry.content or entry.locations)
+        has_body = bool(entry.content or entry.locations or entry.raw_input is not None)
         parts: list[Content | str | tuple[str, str]] = [
             (f"{arrow} " if has_body else "  ", "$text-muted"),
             status_icon(entry.status),
@@ -332,6 +344,15 @@ class ToolCallView(Vertical):
                 lines.append(f"↳ {path}:{line}" if line else f"↳ {path}")
             widgets.append(Static(Content("\n".join(lines)), classes="tool-locations"))
         widgets.extend(self._content_widget(item) for item in entry.content)
+        if self.show_raw:
+            if entry.raw_input is not None:
+                widgets.append(
+                    Static(Content("input: " + raw_json(entry.raw_input)), classes="tool-text")
+                )
+            if entry.raw_output is not None:
+                widgets.append(
+                    Static(Content("output: " + raw_json(entry.raw_output)), classes="tool-text")
+                )
         return widgets
 
     def _content_widget(self, item: ToolCallContent) -> Widget:
@@ -350,9 +371,11 @@ class ToolCallView(Vertical):
                     )
                 return TerminalView(terminal)
             case SessionReference(session_id=session_id):
-                return Static(Content(f"↳ session {session_id}"), classes="tool-locations")
+                child = self.state.subagents.get(session_id)
+                label = child.display_title if child is not None else session_id
+                return Static(Content(f"↳ session: {label}"), classes="tool-locations")
             case _:
-                return Static(Content(f"[{item.type}]"), classes="tool-locations")
+                return Static(Content(raw_json(item.model_dump())), classes="tool-text")
 
     def _block_widget(self, block: ContentBlock) -> Widget:
         match block:
@@ -360,13 +383,8 @@ class ToolCallView(Vertical):
                 return _text_widget(text)
             case EmbeddedResource(resource=TextResourceContents(text=text)):
                 return _text_widget(text)
-            case ResourceLink() | ImageContent() | EmbeddedResource():
-                desc = describe_block(block) or block.type
-                return Static(
-                    Content(f"[{relative_display(desc, self.state.cwd)}]"), classes="tool-locations"
-                )
             case _:
-                return Static(Content(f"[{block.type}]"), classes="tool-locations")
+                return Markdown(content_markdown([block], self.state.cwd), classes="tool-markdown")
 
     async def refresh_entry(self) -> None:
         """Update after the tool call changed (re-renders content only if it changed)."""
@@ -374,11 +392,15 @@ class ToolCallView(Vertical):
         key = (*(id(item) for item in self.entry.content), len(self.entry.locations))
         if key != self._content_key:
             self._content_key = key
-            body = self.query_one("#tool-body", Vertical)
-            await body.remove_children()
-            await body.mount_all(self._body())
+            await self.rebuild()
             if not self._user_toggled:
                 self.expanded = self._should_expand() or self.expanded
+
+    async def rebuild(self) -> None:
+        """Re-create the content widgets."""
+        body = self.query_one("#tool-body", Vertical)
+        await body.remove_children()
+        await body.mount_all(self._body())
 
     def set_diff_mode(self, mode: DiffViewMode) -> None:
         """Switch how diffs are shown."""
@@ -420,6 +442,9 @@ class PlanView(Static):
         self.set_class(self.entry.removed, "-removed")
         content = self.entry.content
         if not isinstance(content, PlanItems):
+            path = content.path if is_set(content.path) and content.path else None
+            if path:
+                self.border_subtitle = path
             self.update(Content(content.content))
             return
         lines: list[Content] = []
@@ -487,6 +512,111 @@ class CompactionView(Static):
         self.update(Content(text + (f"\n{summary}" if summary else "")))
 
 
+class SessionMessageView(Static):
+    """A message sent to or received from another session."""
+
+    DEFAULT_CSS = """
+    SessionMessageView {
+        height: auto;
+        border-left: wide $secondary;
+        padding: 0 1;
+        margin: 0 0 1 0;
+    }
+    """
+
+    def __init__(self, entry: MessageEntry, state: SessionState) -> None:
+        super().__init__()
+        self.entry = entry
+        self.state = state
+        self.refresh_entry()
+
+    def _session_label(self, session_id: str | None) -> str:
+        if session_id is None:
+            return "?"
+        if session_id == self.state.session_id:
+            return "this session"
+        child = self.state.subagents.get(session_id)
+        return child.display_title if child is not None else session_id
+
+    def refresh_entry(self) -> None:
+        """Re-render."""
+        entry = self.entry
+        sender = self._session_label(entry.sender_session_id)
+        recipient = self._session_label(entry.recipient_session_id)
+        header = f"✉ {sender} → {recipient}"
+        body = content_markdown(entry.blocks, self.state.cwd)
+        self.update(Content.assemble((header, "bold $secondary"), "\n", body))
+
+
+class SubagentView(Static, can_focus=True):
+    """A subagent session; enter opens its conversation, x cancels its work."""
+
+    BINDINGS: ClassVar = [
+        Binding("enter", "open", "Open subagent", show=False),
+        Binding("x", "cancel", "Cancel subagent", show=False),
+    ]
+
+    DEFAULT_CSS = """
+    SubagentView {
+        height: auto;
+        border: round $accent 50%;
+        padding: 0 1;
+        margin: 0 0 1 0;
+        &:focus { border: round $accent; }
+    }
+    """
+
+    class Open(Message):
+        """The user wants to see the subagent's conversation."""
+
+        def __init__(self, session_id: str) -> None:
+            super().__init__()
+            self.session_id = session_id
+
+    class CancelRequested(Message):
+        """The user asked to cancel the subagent's work."""
+
+        def __init__(self, session_id: str) -> None:
+            super().__init__()
+            self.session_id = session_id
+
+    def __init__(self, entry: SubagentEntry) -> None:
+        super().__init__()
+        self.entry = entry
+        self.refresh_entry()
+
+    def refresh_entry(self) -> None:
+        """Re-render."""
+        entry = self.entry
+        running = entry.activity in {"running", "requires_action"}
+        icon = status_icon(
+            "in_progress" if running else "completed" if entry.activity == "idle" else "pending"
+        )
+        hints = "enter: open" + ("  x: cancel" if entry.can_cancel and running else "")
+        parts: list[Content | str | tuple[str, str]] = [
+            icon,
+            " ",
+            ("subagent ", "$text-muted"),
+            (entry.display_title, "bold"),
+            (f"  {entry.activity}", "$text-muted"),
+            (f"  ({hints})", "$text-muted italic"),
+        ]
+        if entry.description:
+            parts += ["\n", (entry.description, "$text-muted")]
+        self.update(Content.assemble(*parts))
+
+    def action_open(self) -> None:
+        self.post_message(self.Open(self.entry.session_id))
+
+    def action_cancel(self) -> None:
+        if self.entry.can_cancel:
+            self.post_message(self.CancelRequested(self.entry.session_id))
+
+    def on_click(self, event: Click) -> None:
+        event.stop()
+        self.action_open()
+
+
 def make_view(  # noqa: PLR0911
     entry: Entry, state: SessionState, diff_mode: DiffViewMode, *, expand_thoughts: bool
 ) -> Widget:
@@ -494,6 +624,8 @@ def make_view(  # noqa: PLR0911
     match entry:
         case MessageEntry(role="user"):
             return UserMessageView(entry, state.cwd)
+        case MessageEntry(role="session"):
+            return SessionMessageView(entry, state)
         case MessageEntry(role="thought"):
             return ThoughtView(entry, state.cwd, expanded=expand_thoughts)
         case MessageEntry():
@@ -506,6 +638,8 @@ def make_view(  # noqa: PLR0911
             return NoticeView(entry)
         case CompactionEntry():
             return CompactionView(entry)
+        case SubagentEntry():
+            return SubagentView(entry)
 
 
 def raw_json(value: object) -> str:
