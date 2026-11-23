@@ -41,6 +41,12 @@ def test_complete_command() -> None:
     assert complete_command("ex", commands)[0].label == "/explain <what>"
 
 
+def test_command_descriptions_show_their_first_line() -> None:
+    docstring = "\nClear the history.\n\nKeeps tools and settings.\n"
+    [completion] = complete_command("cl", [Command(name="clear", description=docstring)])
+    assert completion.detail == "Clear the history."
+
+
 def test_complete_path(workdir: Path) -> None:
     top = complete_path("", workdir)
     nested = complete_path("src/m", workdir)

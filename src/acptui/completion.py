@@ -83,7 +83,11 @@ def complete_command(prefix: str, commands: Sequence[AvailableCommand]) -> list[
         ):
             hint = f" <{command.input.hint}>"
         kind = " (skill)" if isinstance(command, Skill) else ""
-        completion = Completion(f"/{name}{hint}", f"{name} ", f"{command.description}{kind}")
+        # One line per candidate: long descriptions (docstrings) show their summary
+        summary = next(
+            (line.strip() for line in command.description.splitlines() if line.strip()), ""
+        )
+        completion = Completion(f"/{name}{hint}", f"{name} ", f"{summary}{kind}")
         if name.lower().startswith(lowered):
             starts.append(completion)
         elif lowered in name.lower():
