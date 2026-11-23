@@ -68,6 +68,11 @@ def completion_context(line: str, row: int) -> CompletionContext | None:
     return None
 
 
+def first_line(text: str) -> str:
+    """The first non-empty line: a long description's (a docstring's) summary."""
+    return next((line.strip() for line in text.splitlines() if line.strip()), "")
+
+
 def complete_command(prefix: str, commands: Sequence[AvailableCommand]) -> list[Completion]:
     """Commands matching a prefix (then a substring), with their descriptions."""
     lowered = prefix.lower()
@@ -83,10 +88,7 @@ def complete_command(prefix: str, commands: Sequence[AvailableCommand]) -> list[
         ):
             hint = f" <{command.input.hint}>"
         kind = " (skill)" if isinstance(command, Skill) else ""
-        # One line per candidate: long descriptions (docstrings) show their summary
-        summary = next(
-            (line.strip() for line in command.description.splitlines() if line.strip()), ""
-        )
+        summary = first_line(command.description)
         completion = Completion(f"/{name}{hint}", f"{name} ", f"{summary}{kind}")
         if name.lower().startswith(lowered):
             starts.append(completion)

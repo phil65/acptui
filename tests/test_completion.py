@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import Command, Skill, TextCommandInput
 
-from acptui.completion import complete_command, complete_path, completion_context
+from acptui.completion import complete_command, complete_path, completion_context, first_line
 
 
 if TYPE_CHECKING:
@@ -56,3 +56,8 @@ def test_complete_path(workdir: Path) -> None:
     assert [c.insert for c in nested] == ["src/main.py"]
     assert spaced[0].insert == "notes\\ file.txt"
     assert complete_path("../", workdir) == []
+
+
+def test_first_line() -> None:
+    assert first_line("\n  Summary.\n\nMore.") == "Summary."
+    assert first_line("") == ""

@@ -11,6 +11,7 @@ from aclientp.schema.v2 import (
 )
 from aclientp.schema.v2.base import is_set
 
+from acptui.completion import first_line
 from acptui.protocol.connection import AgentConnection
 from acptui.ui.screens.dialogs import _select_values
 
@@ -93,5 +94,5 @@ async def describe_options(spec: AgentSpec, cwd: Path) -> str:
             case _:
                 lines.append(f"  {option.config_id} ({option.type})")
     lines += ["", "Commands:"]
-    lines += [f"  /{command.name}  {command.description}" for command in commands]
+    lines += [f"  /{command.name}  {first_line(command.description)}" for command in commands]
     return "\n".join(lines)
