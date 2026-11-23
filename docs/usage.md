@@ -70,6 +70,15 @@ the account, background work, mode and model, the context window and the cost.
 | `f12` | Screenshot: the screen as SVG and as text (Downloads), text copied to the clipboard |
 | `ctrl+q` | Quit |
 
+## Images
+
+Images the agent sends (in messages and tool output) are drawn in the terminal with the
+best method it supports: the kitty graphics protocol, Sixel, or colored half blocks
+(any color terminal, also in the browser with `acptui serve`). acptui asks the terminal
+once at start; `images = "halfcell"` (or `tgp`, `sixel`, `unicode`, `off`) in the
+config picks one. Large images are scaled down; images are only taken from the data
+the agent sends, an image URI is shown but never fetched.
+
 ## Attachments
 
 `@path` mentions (inside the working directory) are attached to the prompt: small
@@ -156,6 +165,7 @@ default_agent = "codex"
 theme = "tokyo-night"              # any Textual theme
 diff_view = "auto"                 # unified, split or auto (split from 120 columns)
 expand_thoughts = false
+images = "auto"                    # auto, tgp (kitty), sixel, halfcell, unicode or off
 system_prompt = "Prefer small commits."
 system_prompt_mode = "append"
 additional_directories = ["~/src/shared"]

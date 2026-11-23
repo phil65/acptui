@@ -27,6 +27,7 @@ from acptui.ui.markdown import AgentMarkdown, link_is_web, summary_markdown
 from acptui.ui.screens.dialogs import ConfirmScreen, _select_values, method_description
 from acptui.ui.screens.picker import AgentPicker
 from acptui.ui.screens.session import SessionScreen
+from acptui.ui.widgets.image import prepare as prepare_images
 
 
 if TYPE_CHECKING:
@@ -142,6 +143,7 @@ class AcpTui(App[None]):
         self.spec = spec
         self.resume_id = resume_id
         self.agent_log = AgentLog()
+        prepare_images(settings.images)
 
     def screen_text(self) -> str:
         """The current screen as plain text (what an SVG screenshot shows, without styling)."""

@@ -34,12 +34,14 @@ dependencies = [
   "aclientp[websocket]>=0.4.0",  # 0.4: notifications before a response are handled first
   "anyio>=4.0",
   "markdown-it-py>=3",
+  "pillow>=10.3",
   "platformdirs>=4.14.8",
   "promptantic[textual]>=1.1.3",
   "pydantic",
   "rich>=14",
   "schemez",
   "textual>=8.2.8",
+  "textual-image>=0.14.4",
   "upathtools[tree-sitter]>=1.25.2",
 ]
 

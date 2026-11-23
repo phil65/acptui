@@ -118,7 +118,7 @@ Abbreviations: `conn` = `protocol/connection.py` (`AgentConnection`), `state` =
 | Block | In messages | In prompts | Tests |
 | --- | --- | --- | --- |
 | `text` | Markdown | typed text | many |
-| `image` | Placeholder with type and size | `@image.png` when supported | SC `test_every_content_block_kind`; `test_prompt.py` |
+| `image` | Drawn in the terminal (kitty graphics, Sixel or half blocks; `images` setting), with type, size and URI (never fetched) | `@image.png` when supported | `test_images.py`; SC `test_every_content_block_kind`; `test_prompt.py` |
 | `audio` | Placeholder with type and size | `@clip.wav` when supported | same |
 | `resource_link` | Link (http) or path, title, description, size | `@file` / `@dir` (always allowed) | same |
 | `resource` (text / blob) | Highlighted code block / placeholder | small text files when `embeddedContext` | same |

@@ -28,6 +28,7 @@ from acptui.ui.widgets.blocks import (
     UserMessageView,
 )
 from acptui.ui.widgets.diff import DiffView
+from acptui.ui.widgets.image import ImageView
 from tests.test_app import SIZE, connected, send, session, stop_reason, until
 
 
@@ -161,7 +162,8 @@ async def test_media_plans_notices_compaction_suggestions(
         await pilot.pause(0.3)
 
         media = agent_texts(screen)[0]
-        assert "image: image/png" in media
+        assert "image: image/png" not in media  # drawn as an image, not a placeholder
+        assert screen.query(ImageView)
         assert "**Project readme** `README.md`" in media
         assert "only for the model" not in media
         assert len(screen.query(DiffView)) == 2

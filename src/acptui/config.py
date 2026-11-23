@@ -37,6 +37,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 DiffViewMode = Literal["unified", "split", "auto"]
 """How diffs are shown: one column, side by side, or side by side when wide enough."""
 
+ImageMode = Literal["auto", "tgp", "sixel", "halfcell", "unicode", "off"]
+"""How images are drawn: the best the terminal supports (``auto``), one way, or not at all."""
+
 _ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -258,6 +261,10 @@ class Settings(BaseModel):
 
     expand_thoughts: bool = False
     """Show agent thoughts expanded instead of collapsed."""
+
+    images: ImageMode = "auto"
+    """How images are drawn: ``auto`` (the best the terminal supports), ``tgp`` (kitty),
+    ``sixel``, ``halfcell`` (colored half blocks, any terminal), ``unicode`` or ``off``."""
 
     agents: dict[str, UserAgent] = Field(default_factory=dict)
     """User-defined agents; an id of a built-in agent replaces it."""

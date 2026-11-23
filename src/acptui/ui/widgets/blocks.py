@@ -11,6 +11,7 @@ from aclientp.schema.v2 import (
     Content as ToolContent,
     Diff,
     EmbeddedResource,
+    ImageContent,
     SessionReference,
     Terminal,
     TextContent,
@@ -25,7 +26,7 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Collapsible, Markdown, Static
 
-from acptui.protocol.content import content_markdown, describe_block, relative_display
+from acptui.protocol.content import content_markdown, describe_block, for_user, relative_display
 from acptui.protocol.state import (
     CompactionEntry,
     MessageEntry,
@@ -39,10 +40,13 @@ from acptui.protocol.state import (
 from acptui.ui.markdown import AgentMarkdown, inline_markdown
 from acptui.ui.render import pill, status_icon, tool_icon
 from acptui.ui.widgets.diff import DiffView
+from acptui.ui.widgets.image import ImageView, image_key
 from acptui.ui.widgets.terminal import ShellView, TerminalView
 
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from aclientp.schema.v2 import ContentBlock, ToolCallContent
     from textual.app import ComposeResult
     from textual.events import Click
@@ -151,8 +155,27 @@ class StreamingMarkdown(AgentMarkdown):
             await stream.stop()
 
 
-class AgentMessageView(StreamingMarkdown):
-    """A message of the agent, streamed as Markdown."""
+Segment = tuple[str, list["ContentBlock"]]
+"""A run of a message's blocks: ``("markdown", blocks)`` or ``("image", [image])``."""
+
+
+def message_segments(blocks: Sequence[ContentBlock]) -> list[Segment]:
+    """Split message content into Markdown runs and images (blocks for the user only)."""
+    segments: list[Segment] = []
+    for block in blocks:
+        if not for_user(block):
+            continue
+        if isinstance(block, ImageContent):
+            segments.append(("image", [block]))
+        elif segments and segments[-1][0] == "markdown":
+            segments[-1][1].append(block)
+        else:
+            segments.append(("markdown", [block]))
+    return segments
+
+
+class AgentMessageView(Vertical):
+    """A message of the agent: streamed Markdown, with its images drawn in between."""
 
     DEFAULT_CSS = """
     AgentMessageView {
@@ -160,17 +183,68 @@ class AgentMessageView(StreamingMarkdown):
         margin: 0 0 1 0;
         padding: 0 1;
         background: transparent;
+        StreamingMarkdown { height: auto; margin: 0; padding: 0; background: transparent; }
     }
     """
 
     def __init__(self, entry: MessageEntry, cwd: str) -> None:
-        super().__init__(_content_markdown(entry.blocks, cwd))
+        super().__init__()
         self.entry = entry
         self.cwd = cwd
+        self._segment_layout: list[tuple[str, str]] = []
+        """What is mounted: ``("markdown", "")`` or ``("image", key)`` per segment."""
+
+    @property
+    def source(self) -> str:
+        """The Markdown of the message's text (without images)."""
+        return "".join(view.source for view in self.query_children(StreamingMarkdown))
+
+    def _wanted(self) -> list[tuple[tuple[str, str], Segment]]:
+        wanted: list[tuple[tuple[str, str], Segment]] = []
+        for kind, blocks in message_segments(self.entry.blocks):
+            image = blocks[0]
+            key = image_key(image.data) if isinstance(image, ImageContent) else ""
+            wanted.append(((kind, key), (kind, blocks)))
+        return wanted
+
+    def _segment_widget(self, segment: Segment) -> Widget:
+        kind, blocks = segment
+        image = blocks[0]
+        if kind == "image" and isinstance(image, ImageContent):
+            uri = image.uri if is_set(image.uri) and image.uri else None
+            return ImageView(image.data, image.mime_type, uri=uri)
+        return StreamingMarkdown(_content_markdown(blocks, self.cwd))
+
+    def compose(self) -> ComposeResult:
+        wanted = self._wanted()
+        self._segment_layout = [layout for layout, _ in wanted]
+        for _, segment in wanted:
+            yield self._segment_widget(segment)
 
     async def refresh_entry(self) -> None:
         """Show the entry's current content (streaming what was appended)."""
-        await self.sync(_content_markdown(self.entry.blocks, self.cwd))
+        wanted = self._wanted()
+        layout = [item for item, _ in wanted]
+        children = list(self.children)
+        if layout[: len(self._segment_layout)] != self._segment_layout or len(children) != len(
+            self._segment_layout
+        ):
+            await self.remove_children()
+            self._segment_layout = []
+            children = []
+        for index, (_, segment) in enumerate(wanted):
+            if index < len(children):
+                child = children[index]
+                if isinstance(child, StreamingMarkdown):
+                    await child.sync(_content_markdown(segment[1], self.cwd))
+            else:
+                await self.mount(self._segment_widget(segment))
+        self._segment_layout = layout
+
+    async def finish(self) -> None:
+        """Flush streamed text."""
+        for view in self.query_children(StreamingMarkdown):
+            await view.finish()
 
 
 class ThoughtView(Collapsible):
@@ -386,6 +460,9 @@ class ToolCallView(Vertical):
                 return _text_widget(text)
             case EmbeddedResource(resource=TextResourceContents(text=text)):
                 return _text_widget(text)
+            case ImageContent():
+                uri = block.uri if is_set(block.uri) and block.uri else None
+                return ImageView(block.data, block.mime_type, uri=uri)
             case _:
                 return AgentMarkdown(
                     content_markdown([block], self.state.cwd), classes="tool-markdown"

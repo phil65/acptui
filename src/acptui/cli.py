@@ -147,6 +147,9 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     from acptui.setup import build_setup, parse_option
     from acptui.ui.app import AcpTui
+    from acptui.ui.widgets.image import prepare
+
+    prepare(settings.images)  # probes the terminal: before the app takes it over
 
     setup = None
     if spec is not None:

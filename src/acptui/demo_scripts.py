@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import struct
 from typing import TYPE_CHECKING
 import uuid
+import zlib
 
 from aclientp.schema.v2 import (
     AddDiffChange,
@@ -78,13 +80,39 @@ if TYPE_CHECKING:
     from acptui.demo import DemoAgent, DemoSession
 
 
-# A 1x1 PNG and a 44-byte WAV header with no samples.
-PNG = base64.b64encode(
-    bytes.fromhex(
-        "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
-        "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
+def _png(width: int = 96, height: int = 48) -> str:
+    """A small generated PNG (a sunset: sky gradient, sun, sea), base64 encoded."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    rows = bytearray()
+    for y in range(height):
+        rows.append(0)  # filter: none
+        for x in range(width):
+            sun = (x - width * 0.65) ** 2 + (y - height * 0.45) ** 2 < (height * 0.18) ** 2
+            if y > height * 0.6:  # sea, with a reflection under the sun
+                shimmer = abs(x - width * 0.65) < height * 0.12 and y % 3 == 0
+                pixel = (250, 200, 90) if shimmer else (20, 50 + y, 110 + y)
+            elif sun:
+                pixel = (255, 215, 80)
+            else:
+                t = y / (height * 0.6)
+                pixel = (int(40 + 210 * t), int(30 + 90 * t), int(120 - 40 * t))
+            rows.extend(pixel)
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+        + chunk(b"IEND", b"")
     )
-).decode()
+    return base64.b64encode(png).decode()
+
+
+# A generated PNG and a 44-byte WAV header with no samples.
+PNG = _png()
 WAV = base64.b64encode(
     b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00D\xac\x00\x00"
     b"\x88X\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
