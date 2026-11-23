@@ -30,13 +30,13 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
+  # Only add below (Copier)
   "aclientp[websocket]>=0.3.0",
   "anyio>=4.0",
   "platformdirs>=4.14.8",
   "pydantic",
   "rich>=14",
   "schemez",
-  # Only add below (Copier)
   "textual>=8.2.8",
 ]
 
