@@ -123,8 +123,19 @@ def main(argv: Sequence[str] | None = None) -> None:
             spec = _resolve_run(settings, options.agent, options.args)
             raise SystemExit(print_options(spec, cwd))
         case "run":
-            spec = _resolve_run(settings, options.agent, options.args)
+            args = list(options.args)
             resume = options.resume
+            if settings.find_agent(options.agent) is not None and args[:1] == ["--resume"]:
+                if len(args) != 2:  # noqa: PLR2004
+                    raise SystemExit("usage: acptui run AGENT --resume SESSION_ID")
+                resume, args = args[1], []
+            if args and settings.find_agent(options.agent) is not None:
+                msg = (
+                    f"{options.agent!r} is a registry agent; "
+                    "run a program with: acptui run -- PROGRAM ARGS"
+                )
+                raise SystemExit(msg)
+            spec = _resolve_run(settings, options.agent, args)
         case "connect":
             spec = url_spec(options.url, _headers(options.header))
             resume = options.resume

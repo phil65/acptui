@@ -27,7 +27,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "aclientp[websocket]>=0.2.2",
+  "aclientp[websocket]>=0.2.3",
   "platformdirs>=4.14.8",
   "pydantic",
   "schemez",

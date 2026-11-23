@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import (
+    AudioContent,
     EmbeddedResource,
     ImageContent,
     ResourceLink,
@@ -58,6 +59,13 @@ def test_images_are_attached_only_when_supported(workdir: Path) -> None:
     assert isinstance(linked[1], ResourceLink)
     assert isinstance(attached[1], ImageContent)
     assert attached[1].mime_type == "image/png"
+
+
+def test_audio_is_attached_only_when_supported(workdir: Path) -> None:
+    (workdir / "voice.wav").write_bytes(b"RIFF")
+    blocks = build_prompt("hear @voice.wav", workdir, PromptOptions(audio=True))
+    assert isinstance(blocks[1], AudioContent)
+    assert isinstance(build_prompt("@voice.wav", workdir, PromptOptions())[1], ResourceLink)
 
 
 def test_mentions_outside_cwd_or_missing_are_ignored(workdir: Path) -> None:

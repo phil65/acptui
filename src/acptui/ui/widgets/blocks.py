@@ -238,6 +238,7 @@ class ToolCallHeader(Static, can_focus=True):
     def action_toggle_details(self) -> None:
         parent = self.parent
         if isinstance(parent, ToolCallView):
+            parent._user_toggled = True
             parent.expanded = not parent.expanded
 
     def action_cancel(self) -> None:
@@ -394,7 +395,7 @@ class ToolCallView(Vertical):
             self._content_key = key
             await self.rebuild()
             if not self._user_toggled:
-                self.expanded = self._should_expand() or self.expanded
+                self.expanded = self._should_expand()
 
     async def rebuild(self) -> None:
         """Re-create the content widgets."""

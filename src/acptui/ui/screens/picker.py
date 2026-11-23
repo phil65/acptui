@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from textual.binding import Binding
@@ -80,9 +81,10 @@ class AgentPicker(Screen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="picker"):
-            yield Static(
-                Content.assemble("acptui · pick an agent for ", (self.cwd, "italic")), id="heading"
-            )
+            home = str(Path.home())
+            cwd = "~" + self.cwd[len(home) :] if self.cwd.startswith(home) else self.cwd
+            heading = Content.assemble("acptui · pick an agent for ", (cwd, "italic"))
+            yield Static(heading, id="heading")
             yield OptionList(*(agent_option(spec) for spec in self.agents), id="agents")
             yield Input(
                 placeholder="…or an agent command (e.g. my-agent --acp) or URL, then enter",

@@ -421,6 +421,12 @@ class AgentConnection:
         return prompt is not None and is_set(prompt.image) and prompt.image is not None
 
     @property
+    def supports_audio(self) -> bool:
+        """Whether prompts may contain audio."""
+        prompt = self.prompt_capabilities
+        return prompt is not None and is_set(prompt.audio) and prompt.audio is not None
+
+    @property
     def supports_embedded_context(self) -> bool:
         """Whether prompts may embed resource contents."""
         prompt = self.prompt_capabilities

@@ -361,3 +361,13 @@ async def test_providers(demo: tuple[AgentConnection, RecordingEvents]) -> None:
         p for p in (await connection.list_providers()).providers if p.provider_id == "backup"
     )
     assert backup.current is None
+
+
+async def test_cancel_a_terminal(demo: tuple[AgentConnection, RecordingEvents]) -> None:
+    connection, events = demo
+    session = await connection.new_session()
+    state = events.track(session.session_id, str(connection.cwd))
+    await connection.prompt(session.session_id, [TextContent(text="/slow")])
+    await wait_for(lambda: state.running)
+    await connection.cancel_terminal(session.session_id, "term-1")
+    await wait_for(lambda: state.stop_reason == "cancelled")

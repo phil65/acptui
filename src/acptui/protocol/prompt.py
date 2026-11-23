@@ -10,6 +10,7 @@ import re
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import (
+    AudioContent,
     EmbeddedResource,
     ImageContent,
     ResourceLink,
@@ -48,6 +49,7 @@ class PromptOptions:
 
     embedded_context: bool = False
     images: bool = False
+    audio: bool = False
     skills: frozenset[str] = frozenset()
     """Names of the session's ``skill`` commands (only used if the agent accepts skills)."""
 
@@ -90,8 +92,8 @@ def _is_text(path: Path, mime: str) -> bool:
 def file_block(path: Path, options: PromptOptions) -> ContentBlock:
     """The content block for a mentioned file.
 
-    Small text files are embedded if the agent accepts embedded context, images are
-    attached if it accepts images; everything else (and directories) is linked.
+    Small text files are embedded if the agent accepts embedded context, images and
+    audio are attached if it accepts them; everything else (and directories) is linked.
     """
     uri = path.as_uri()
     mime = guess_mime(path)
@@ -100,6 +102,9 @@ def file_block(path: Path, options: PromptOptions) -> ContentBlock:
         if options.images and mime.startswith("image/") and size <= MAX_IMAGE_BYTES:
             data = base64.b64encode(path.read_bytes()).decode("ascii")
             return ImageContent(data=data, mime_type=mime, uri=uri)
+        if options.audio and mime.startswith("audio/") and size <= MAX_IMAGE_BYTES:
+            data = base64.b64encode(path.read_bytes()).decode("ascii")
+            return AudioContent(data=data, mime_type=mime)
         if options.embedded_context and size <= MAX_EMBED_BYTES and _is_text(path, mime):
             try:
                 text = path.read_text(encoding="utf-8")

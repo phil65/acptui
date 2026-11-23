@@ -11,7 +11,7 @@ from acptui.protocol.connection import SessionSetup
 from acptui.protocol.state import MessageEntry
 from acptui.ui.app import AcpTui, session_commands
 from acptui.ui.screens.dialogs import ConfirmScreen, ForkScreen, SessionListScreen, TextInputScreen
-from acptui.ui.screens.elicitation import FormElicitationScreen
+from acptui.ui.screens.elicitation import FormElicitationScreen, UrlElicitationScreen
 from acptui.ui.screens.log import LogScreen
 from acptui.ui.screens.permission import PermissionScreen
 from acptui.ui.screens.providers import ProviderEditScreen, ProvidersScreen, parse_headers
@@ -307,3 +307,39 @@ async def test_session_setup_from_settings(demo_spec: AgentSpec, workdir: Path) 
         assert isinstance(app.screen, LogScreen)
         await pilot.press("t")  # protocol traffic
         await pilot.press("escape")
+
+
+async def test_agent_cancelling_a_permission_request_closes_the_dialog(
+    demo_spec: AgentSpec, workdir: Path
+) -> None:
+    app = AcpTui(Settings(), workdir, demo_spec)
+    async with app.run_test(size=SIZE) as pilot:
+        screen = await connected(pilot, app)
+        await send(pilot, "tour")
+        await until(pilot, lambda: isinstance(app.screen, PermissionScreen))
+        screen.action_cancel_turn()  # the agent then cancels its request ($/cancel_request)
+        await until(pilot, lambda: stop_reason(screen) == "cancelled")
+        await until(pilot, lambda: app.screen is screen)
+
+
+async def test_url_dialog_closes_on_complete(workdir: Path) -> None:
+    from aclientp.schema.v2 import AcceptElicitationResponse, UrlElicitationRequest
+    from textual.app import App
+
+    results: list[object] = []
+    request = UrlElicitationRequest(
+        message="Sign in", session_id="s", elicitation_id="e", url="https://x"
+    )
+
+    class Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(UrlElicitationScreen(request), callback=results.append)
+
+    host = Host()
+    async with host.run_test() as pilot:
+        dialog = host.screen
+        assert isinstance(dialog, UrlElicitationScreen)
+        assert "https://x" in str(dialog.query_one("#url").render())
+        dialog.complete()
+        await pilot.pause()
+    assert results == [AcceptElicitationResponse()]

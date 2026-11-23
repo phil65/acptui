@@ -566,6 +566,7 @@ class SessionScreen(Screen[None]):
         options = PromptOptions(
             embedded_context=connection.supports_embedded_context,
             images=connection.supports_images,
+            audio=connection.supports_audio,
             skills=skills if connection.supports_skills else frozenset(),
         )
         blocks = build_prompt(message.text, self.cwd, options)
