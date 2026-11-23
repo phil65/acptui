@@ -1,41 +1,34 @@
-"""Elicitation: structured input the agent asks for, as a form or a URL to visit."""
+"""Elicitation: structured input the agent asks for, as a form (promptantic) or a URL to visit."""
 
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 import webbrowser
 
 from aclientp.schema.v2 import (
     AcceptElicitationResponse,
-    BooleanPropertySchema,
     CancelElicitationResponse,
     DeclineElicitationResponse,
-    IntegerPropertySchema,
-    MultiSelectPropertySchema,
-    NumberPropertySchema,
-    StringMultiSelectItems,
-    StringPropertySchema,
-    TitledMultiSelectItems,
 )
 from aclientp.schema.v2.base import is_set
+from promptantic.form import target_for
+from promptantic.textual import FormView
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical
 from textual.content import Content
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Select, SelectionList, Static, Switch
+from textual.widgets import Button, Static
 
 
 if TYPE_CHECKING:
     from aclientp.schema.v2 import (
         CreateElicitationResponse,
-        ElicitationPropertySchema,
         FormElicitationRequest,
         UrlElicitationRequest,
     )
     from pydantic import MISSING
     from textual.app import ComposeResult
-    from textual.widget import Widget
 
 
 FieldValue = str | int | float | bool | list[str]
@@ -73,183 +66,47 @@ def cancelled_elicitation() -> CreateElicitationResponse:
 
 
 class FormElicitationScreen(ModalScreen["CreateElicitationResponse"]):
-    """A form generated from the requested schema."""
+    """A form for the requested schema, built and validated by promptantic."""
 
     DEFAULT_CSS = "FormElicitationScreen {" + DIALOG_CSS + "}"
     BINDINGS: ClassVar = [
         Binding("escape", "cancel", "Cancel"),
-        Binding("ctrl+s", "submit", "Submit"),
+        Binding("ctrl+s", "submit", "Submit", priority=True),
     ]
 
     def __init__(self, request: FormElicitationRequest) -> None:
         super().__init__()
         self.request = request
-        self.schema = request.requested_schema
-        required = self.schema.required
-        self.required: set[str] = set(required) if is_set(required) and required else set()
-        self.fields: dict[str, Widget] = {}
+        self.schema: dict[str, Any] = request.requested_schema.model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
+        self.form = FormView(target_for(self.schema))
 
     def compose(self) -> ComposeResult:
-        schema = self.schema
         with Vertical(id="dialog"):
-            title = schema.title if is_set(schema.title) and schema.title else None
-            yield Static(Content(title or "The agent needs input"), id="message")
+            yield Static(Content(self.schema.get("title") or "The agent needs input"), id="message")
             yield Static(Content(self.request.message))
-            if is_set(schema.description) and schema.description:
-                yield Static(Content(schema.description), classes="help")
-            with VerticalScroll(id="fields"):
-                for name, prop in schema.properties.items():
-                    yield from self._field(name, prop)
-            yield Static("", id="errors")
+            if description := self.schema.get("description"):
+                yield Static(Content(description), classes="help")
+            yield self.form
             with Horizontal(id="buttons"):
                 yield Button("Submit", variant="success", id="submit", compact=True)
                 yield Button("Decline", variant="error", id="decline", compact=True)
                 yield Button("Cancel", id="cancel", compact=True)
 
-    def _field(self, name: str, prop: ElicitationPropertySchema) -> ComposeResult:
-        title = getattr(prop, "title", None)
-        label = title if isinstance(title, str) and title else name
-        star = " *" if name in self.required else ""
-        yield Static(Content.assemble((label, "bold"), star), classes="label")
-        description = getattr(prop, "description", None)
-        if isinstance(description, str) and description:
-            yield Static(Content(description), classes="help")
-        widget = self._widget(prop)
-        self.fields[name] = widget
-        yield widget
-
-    def _widget(self, prop: ElicitationPropertySchema) -> Widget:  # noqa: PLR0911
-        match prop:
-            case StringPropertySchema():
-                default = _optional(prop.default)
-                one_of = _optional(prop.one_of)
-                enum = _optional(prop.enum)
-                if one_of:
-                    options = [(option.title, option.const) for option in one_of]
-                    return Select(
-                        options, value=default if default is not None else Select.NULL, compact=True
-                    )
-                if enum:
-                    return Select(
-                        [(value, value) for value in enum],
-                        value=default if default is not None else Select.NULL,
-                        compact=True,
-                    )
-                fmt = _optional(prop.format)
-                max_length = _optional(prop.max_length)
-                return Input(
-                    value=default or "",
-                    placeholder=fmt or "",
-                    max_length=max_length or 0,
-                    compact=True,
-                )
-            case IntegerPropertySchema():
-                default_int = _optional(prop.default)
-                return Input(
-                    value="" if default_int is None else str(default_int),
-                    type="integer",
-                    compact=True,
-                )
-            case NumberPropertySchema():
-                default_num = _optional(prop.default)
-                return Input(
-                    value="" if default_num is None else str(default_num),
-                    type="number",
-                    compact=True,
-                )
-            case BooleanPropertySchema():
-                return Switch(value=bool(_optional(prop.default)))
-            case MultiSelectPropertySchema():
-                chosen = set(_optional(prop.default) or ())
-                items = prop.items
-                if isinstance(items, TitledMultiSelectItems):
-                    pairs = [(option.title, option.const) for option in items.any_of]
-                elif isinstance(items, StringMultiSelectItems):
-                    pairs = [(value, value) for value in items.enum]
-                else:
-                    pairs = []
-                return SelectionList[str](
-                    *((label, value, value in chosen) for label, value in pairs)
-                )
-            case _:
-                return Input(placeholder=f"({prop.type})", compact=True)
-
-    def on_mount(self) -> None:
-        first = next(iter(self.fields.values()), None)
-        if first is not None:
-            first.focus()
-
-    def _value(self, prop: ElicitationPropertySchema, widget: Widget) -> FieldValue | None:  # noqa: PLR0911
-        match widget:
-            case Switch():
-                return widget.value
-            case SelectionList():
-                return [str(value) for value in widget.selected]
-            case Select():
-                value = widget.value
-                return None if value is Select.NULL else str(value)
-            case Input():
-                text = widget.value.strip()
-                if not text:
-                    return None
-                if isinstance(prop, IntegerPropertySchema):
-                    return int(text)
-                if isinstance(prop, NumberPropertySchema):
-                    return float(text)
-                return text
-            case _:
-                return None
-
-    def _validate(  # noqa: PLR0911
-        self, name: str, prop: ElicitationPropertySchema, value: FieldValue | None
-    ) -> str | None:
-        if value is None or value == []:
-            return f"{name} is required" if name in self.required else None
-        match prop:
-            case StringPropertySchema() if isinstance(value, str):
-                low, high = _optional(prop.min_length), _optional(prop.max_length)
-                if low is not None and len(value) < low:
-                    return f"{name}: at least {low} characters"
-                if high is not None and len(value) > high:
-                    return f"{name}: at most {high} characters"
-            case IntegerPropertySchema() | NumberPropertySchema() if isinstance(value, int | float):
-                low_n, high_n = _optional(prop.minimum), _optional(prop.maximum)
-                if low_n is not None and value < low_n:
-                    return f"{name}: at least {low_n}"
-                if high_n is not None and value > high_n:
-                    return f"{name}: at most {high_n}"
-            case MultiSelectPropertySchema() if isinstance(value, list):
-                low_i, high_i = _optional(prop.min_items), _optional(prop.max_items)
-                if low_i is not None and len(value) < low_i:
-                    return f"{name}: choose at least {low_i}"
-                if high_i is not None and len(value) > high_i:
-                    return f"{name}: choose at most {high_i}"
-        return None
-
     def action_submit(self) -> None:
-        """Validate and accept."""
-        content: dict[str, FieldValue] = {}
-        errors: list[str] = []
-        for name, prop in self.schema.properties.items():
-            try:
-                value = self._value(prop, self.fields[name])
-            except ValueError:
-                errors.append(f"{name}: not a valid number")
-                continue
-            if (error := self._validate(name, prop, value)) is not None:
-                errors.append(error)
-            elif value is not None and value != []:
-                content[name] = value
-        if errors:
-            self.query_one("#errors", Static).update(Content("\n".join(errors)))
-            return
-        self.dismiss(AcceptElicitationResponse(content=content))
+        self.form.submit()
+
+    def on_form_view_submitted(self, event: FormView.Submitted) -> None:
+        event.stop()
+        self.dismiss(AcceptElicitationResponse(content=event.result))
 
     def action_cancel(self) -> None:
-        """Cancel the elicitation."""
+        """Close without an answer."""
         self.dismiss(CancelElicitationResponse())
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
         match event.button.id:
             case "submit":
                 self.action_submit()

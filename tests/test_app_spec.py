@@ -78,22 +78,25 @@ async def test_form_elicitation(demo_spec: AgentSpec, workdir: Path) -> None:
         form = app.screen
         assert isinstance(form, FormElicitationScreen)
 
-        await pilot.press("ctrl+s")  # name is required
-        assert isinstance(app.screen, FormElicitationScreen)
-        assert "name is required" in str(form.query_one("#errors").render())
+        def shown_errors() -> str:
+            return " ".join(
+                str(w.render()) for w in form.query(".pa-errors") if not w.has_class("-empty")
+            )
 
-        name = form.fields["name"]
-        assert isinstance(name, Input)
+        await pilot.press("ctrl+s")  # name is required
+        await pilot.pause()
+        assert isinstance(app.screen, FormElicitationScreen)
+        assert "required" in shown_errors().lower()
+
+        name, ratio, _count = form.query(Input)  # text fields, in schema order
         name.value = "acptui"
-        ratio = form.fields["ratio"]
-        assert isinstance(ratio, Input)
         ratio.value = "5"
         await pilot.press("ctrl+s")
-        assert "ratio: at most 1" in str(form.query_one("#errors").render())
+        await pilot.pause()
+        assert isinstance(app.screen, FormElicitationScreen)
+        assert "1" in shown_errors()  # ratio: at most 1
         ratio.value = "0.5"
-        public = form.fields["public"]
-        assert isinstance(public, Switch)
-        public.value = False
+        form.query_one(Switch).value = False  # public
         await pilot.press("ctrl+s")
         await until(pilot, lambda: stop_reason(screen) == "end_turn")
         await pilot.pause(0.2)
