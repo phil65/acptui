@@ -64,6 +64,7 @@ the account, background work, mode and model, the context window and the cost.
 | `ctrl+p` | Command palette: everything above, login / logout, providers, option values |
 | `f5` | Restart the agent |
 | `f1` | Help |
+| `f12` | Screenshot: the screen as SVG and as text (Downloads), text copied to the clipboard |
 | `ctrl+q` | Quit |
 
 ## Attachments

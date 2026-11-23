@@ -473,6 +473,7 @@ A terminal UI for AI coding agents speaking **ACP v2**.
 | `pageup` / `pagedown` | Scroll the conversation |
 | `ctrl+p` | Command palette |
 | `f5` | Restart the agent |
+| `f12` | Screenshot: SVG + text to Downloads, text copied |
 | `ctrl+q` | Quit |
 
 ## Permission dialog

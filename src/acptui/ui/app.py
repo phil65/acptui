@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from functools import partial
+import io
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from aclientp.schema.v2 import (
@@ -11,6 +14,8 @@ from aclientp.schema.v2 import (
     BooleanSessionConfigOption,
     SelectSessionConfigOption,
 )
+import platformdirs
+from rich.console import Console
 from textual.app import App
 from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
@@ -24,7 +29,6 @@ from acptui.ui.screens.session import SessionScreen
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
-    from pathlib import Path
 
     from acptui.config import AgentSpec, Settings
     from acptui.protocol.connection import SessionSetup
@@ -106,7 +110,10 @@ class AcpTui(App[None]):
 
     TITLE = "acptui"
     COMMANDS: ClassVar = App.COMMANDS | {SessionCommands}
-    BINDINGS: ClassVar = [Binding("ctrl+q", "quit", "Quit", priority=True)]
+    BINDINGS: ClassVar = [
+        Binding("ctrl+q", "quit", "Quit", priority=True),
+        Binding("f12", "screenshot", "Screenshot", show=False),
+    ]
     CSS = """
     Screen { background: $background; }
     """
@@ -127,6 +134,42 @@ class AcpTui(App[None]):
         self.spec = spec
         self.resume_id = resume_id
         self.agent_log = AgentLog()
+
+    def screen_text(self) -> str:
+        """The current screen as plain text (what an SVG screenshot shows, without styling)."""
+        width, height = self.size
+        console = Console(
+            width=width,
+            height=height,
+            file=io.StringIO(),
+            record=True,
+            legacy_windows=False,
+            color_system=None,
+            force_terminal=True,
+        )
+        console.print(self.screen._compositor.render_update(full=True))
+        return console.export_text(styles=False).rstrip() + "\n"
+
+    def action_screenshot(self, filename: str | None = None, path: str | None = None) -> None:
+        """Save the screen as SVG and as text (Downloads by default); copy the text.
+
+        Extends Textual's screenshot (palette: "Screenshot", key: F12): the text version
+        can go straight into an issue or to an agent.
+        """
+        folder = Path(path) if path else platformdirs.user_downloads_path()
+        stem = Path(filename).stem if filename else f"acptui_{dt.datetime.now():%Y-%m-%d_%H-%M-%S}"
+        text = self.screen_text()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / f"{stem}.svg").write_text(self.export_screenshot(), encoding="utf-8")
+            (folder / f"{stem}.txt").write_text(text, encoding="utf-8")
+        except OSError as exc:
+            self.notify(
+                f"Couldn't save the screenshot: {exc}", title="Screenshot", severity="error"
+            )
+            return
+        self.copy_to_clipboard(text)
+        self.notify(f"{folder / stem}.txt / .svg (text copied)", title="Screenshot")
 
     def on_mount(self) -> None:
         if self.settings.theme in self.available_themes:

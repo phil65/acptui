@@ -385,3 +385,15 @@ async def test_resume_keeps_the_title(demo_spec: AgentSpec, workdir: Path) -> No
         await pilot.pause(0.3)
         assert screen.state is not None
         assert screen.state.title == "Kept title"
+
+
+async def test_screenshot_saves_text_and_svg(demo_spec: AgentSpec, workdir: Path) -> None:
+    app = AcpTui(Settings(), workdir, demo_spec)
+    async with app.run_test(size=SIZE) as pilot:
+        await connected(pilot, app)
+        app.action_screenshot("shot", str(workdir / "shots"))
+        await pilot.pause()
+    text = (workdir / "shots" / "shot.txt").read_text()
+    assert text.strip()
+    assert text == app.clipboard
+    assert (workdir / "shots" / "shot.svg").read_text().startswith("<svg")
