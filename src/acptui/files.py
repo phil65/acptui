@@ -69,7 +69,8 @@ class Files:
         self.cwd = cwd.resolve()
         self.mounts = dict(mounts or {})
         local = AutoExpandFS(fs=filesystem("file"), expanders=expanders(), asynchronous=False)
-        workspace = DirFileSystem(path=str(self.cwd), fs=local)
+        # fsspec paths use forward slashes, also on Windows (DirFileSystem compares them)
+        workspace = DirFileSystem(path=self.cwd.as_posix(), fs=local)
         self.fs = UnionFileSystem({WORKSPACE: workspace, **self.mounts})
 
     def root(self) -> UPath:

@@ -27,8 +27,8 @@ GUIDE = "# Guide\n\nIntro.\n\n## Setup\n\nInstall it.\n\n## Use\n\nRun it.\n"
 def project(tmp_path: Path) -> Path:
     root = tmp_path / "project"
     (root / "docs").mkdir(parents=True)
-    (root / "docs" / "guide.md").write_text(GUIDE, encoding="utf-8")
-    (root / "main.py").write_text("def main():\n    return 1\n", encoding="utf-8")
+    (root / "docs" / "guide.md").write_text(GUIDE, encoding="utf-8", newline="\n")
+    (root / "main.py").write_text("def main():\n    return 1\n", encoding="utf-8", newline="\n")
     return root
 
 
@@ -36,7 +36,7 @@ def project(tmp_path: Path) -> Path:
 def mount(tmp_path: Path) -> Path:
     notes = tmp_path / "notes"
     notes.mkdir()
-    (notes / "todo.txt").write_text("buy milk\n", encoding="utf-8")
+    (notes / "todo.txt").write_text("buy milk\n", encoding="utf-8", newline="\n")
     return notes
 
 
