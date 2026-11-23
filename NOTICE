@@ -11,5 +11,9 @@ licensed under the GNU Affero General Public License v3.0:
   after toad's src/toad/widgets/plan.py) and the tool output heuristic in
   `_text_widget` (ANSI / Markdown / plain text, after toad's
   src/toad/widgets/tool_call.py)
+- src/acptui/shell.py: the pseudo-terminal shell of shell mode (setsid and the
+  controlling terminal, the working directory reported by an escape sequence; after
+  toad's src/toad/shell.py), and switching the prompt to shell mode with `!` / `$`
+  (after toad's src/toad/widgets/prompt.py)
 
 The protocol layer (ACP v2 via aclientp) and the other widgets are new code.

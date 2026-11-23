@@ -39,8 +39,9 @@ from acptui.protocol.connection import (
     UnsupportedProtocolError,
 )
 from acptui.protocol.content import content_markdown
-from acptui.protocol.prompt import PromptOptions, build_prompt
-from acptui.protocol.state import EntryAdded, MessageEntry, SessionState
+from acptui.protocol.prompt import PromptOptions, build_prompt, shell_block
+from acptui.protocol.state import EntryAdded, EntryChanged, MessageEntry, SessionState, ShellEntry
+from acptui.shell import open_shell
 from acptui.ui.screens.dialogs import (
     ConfigScreen,
     ForkScreen,
@@ -82,10 +83,11 @@ if TYPE_CHECKING:
 
     from acptui.config import AgentSpec, DiffViewMode
     from acptui.protocol.state import SessionActivity
+    from acptui.shell import Shell, ShellCommand
     from acptui.ui.agent_log import AgentLog
     from acptui.ui.screens.dialogs import ConfigChoice
     from acptui.ui.widgets.blocks import SubagentView, ToolCallView
-    from acptui.ui.widgets.terminal import TerminalView
+    from acptui.ui.widgets.terminal import ShellView, TerminalView
 
 
 DIFF_MODES: tuple[DiffViewMode, ...] = ("unified", "split", "auto")
@@ -165,6 +167,8 @@ class SessionScreen(Screen[None]):
     SessionScreen {
         layout: vertical;
         #prompt-area { height: auto; }
+        #shell-context { height: auto; padding: 0 1; color: $text-muted; display: none; }
+        #shell-context.-pending { display: block; }
     }
     """
 
@@ -178,6 +182,7 @@ class SessionScreen(Screen[None]):
         Binding("ctrl+f", "fork_session", "Fork", show=False),
         Binding("ctrl+l", "show_log", "Log"),
         Binding("ctrl+b", "toggle_files", "Files"),
+        Binding("ctrl+g", "drop_shell_context", "Drop shell output", show=False),
         Binding("f1", "help", "Help"),
         Binding("f2", "rename_session", "Rename", show=False),
         Binding("f5", "restart", "Restart", show=False),
@@ -203,6 +208,11 @@ class SessionScreen(Screen[None]):
         self.files = Files(cwd, mounts)
         """The files panel's filesystem: the workspace (browsable into files) and the mounts."""
         self._files_timer: Timer | None = None
+        self.shell: Shell | None = None
+        """The shell of shell mode (started with the first command)."""
+        self.shell_context: list[ShellCommand] = []
+        """Finished shell commands, sent to the agent with the next prompt."""
+        self._shell_entries: dict[ShellCommand, tuple[SessionState, ShellEntry]] = {}
         self.agent_log = agent_log
         self.diff_mode: DiffViewMode = diff_mode
         self.expand_thoughts = expand_thoughts
@@ -273,6 +283,7 @@ class SessionScreen(Screen[None]):
         prompt.completion_list = completion_list
         with Vertical(id="prompt-area"):
             yield completion_list
+            yield Static("", id="shell-context")
             yield prompt
             yield StatusBar()
         yield Footer(compact=True)
@@ -621,6 +632,9 @@ class SessionScreen(Screen[None]):
     # --- Prompt ---------------------------------------------------------------------
 
     def on_prompt_input_submitted(self, message: PromptInput.Submitted) -> None:
+        if message.shell:
+            self.run_worker(self._run_shell(message.text), group="shell", exit_on_error=False)
+            return
         state = self.state
         connection = self.connection
         if state is None or connection is None or not self.connected:
@@ -634,6 +648,9 @@ class SessionScreen(Screen[None]):
             skills=skills if connection.supports_skills else frozenset(),
         )
         blocks = build_prompt(message.text, self.cwd, options, resolve=self.files.mention_block)
+        blocks.extend(shell_block(command, options) for command in self.shell_context)
+        self.shell_context.clear()
+        self._update_shell_context()
         changes = state.add_local_user_message(blocks)
         entry = changes[0].entry if changes and isinstance(changes[0], EntryAdded) else None
         self.conversation.push(changes)
@@ -654,11 +671,84 @@ class SessionScreen(Screen[None]):
             return
         state.acknowledge_user_message(entry, response.message_id)
 
+    # --- Shell mode -----------------------------------------------------------------
+
+    async def _run_shell(self, text: str) -> None:
+        """Run a shell-mode command (or type the line into the command that is running)."""
+        state = self.state
+        if state is None:
+            self.notify("Shell mode needs a session (connecting…)", severity="warning")
+            return
+        self.prompt.load_text("")
+        if self.shell is None:
+            self.shell = open_shell(self.cwd, on_output=self._on_shell_output)
+        shell = self.shell
+        if shell.busy:
+            await shell.send_input(text)
+            return
+        try:
+            command = await shell.run(text)
+        except OSError as exc:
+            self.conversation.push(state.add_notice("error", "The shell did not start", str(exc)))
+            self.shell = None
+            return
+        changes = state.add_shell_command(command)
+        entry = changes[0].entry if changes and isinstance(changes[0], EntryAdded) else None
+        if isinstance(entry, ShellEntry):
+            self._shell_entries[command] = (state, entry)
+        if self.state is state:
+            self.conversation.push(changes)
+            self.conversation.anchor()
+        if command.done:  # failed right away
+            self._on_shell_output(command)
+
+    def _on_shell_output(self, command: ShellCommand) -> None:
+        known = self._shell_entries.get(command)
+        if known is not None and known[0] is self.state:
+            self.conversation.push([EntryChanged(known[1])])
+        if command.done:
+            self._shell_entries.pop(command, None)
+            self.shell_context.append(command)
+            self._update_shell_context()
+
+    def _update_shell_context(self) -> None:
+        label = self.query_one("#shell-context", Static)
+        commands = self.shell_context
+        label.set_class(bool(commands), "-pending")
+        if not commands:
+            label.update("")
+            return
+        listed = ", ".join(f"$ {c.command.splitlines()[0]} (exit {c.exit_code})" for c in commands)
+        label.update(f"With the next prompt: {listed}   ctrl+g: drop")
+
+    def action_drop_shell_context(self) -> None:
+        """Don't send the output of the shell commands run since the last prompt."""
+        if not self.shell_context:
+            self.notify("No shell output waiting", timeout=2)
+            return
+        self.shell_context.clear()
+        self._update_shell_context()
+        self.notify("Shell output dropped", timeout=2)
+
+    def on_prompt_input_interrupt_shell(self, message: PromptInput.InterruptShell) -> None:
+        message.stop()
+        if self.shell is not None and self.shell.busy:
+            self.spawn(self.shell.interrupt())
+
+    def on_shell_view_interrupt_requested(self, message: ShellView.InterruptRequested) -> None:
+        message.stop()
+        if self.shell is not None and self.shell.current is message.entry.command:
+            self.spawn(self.shell.interrupt())
+
     # --- Actions --------------------------------------------------------------------
 
     def action_cancel_turn(self) -> None:
-        """Cancel the running turn."""
+        """Cancel the running turn (or the running shell command, when the agent is idle)."""
         state = self.state
+        agent_busy = state is not None and state.running
+        if not agent_busy and self.shell is not None and self.shell.busy:
+            self.spawn(self.shell.interrupt())
+            return
         if state is None or self.connection is None or not self.connected:
             return
         if not state.running:
@@ -930,9 +1020,15 @@ class SessionScreen(Screen[None]):
             )
             await process.wait()
 
+    def on_unmount(self) -> None:
+        if self.shell is not None:
+            self.shell.close()
+
     async def shutdown(self) -> None:
-        """Stop the agent (on quit)."""
+        """Stop the agent and the shell (on quit)."""
         self.closing = True
+        if self.shell is not None:
+            self.shell.close()
         self._close_dialogs()
         self.conversation.stop()
         self.workers.cancel_group(self, "agent")

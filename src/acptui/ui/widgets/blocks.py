@@ -31,13 +31,14 @@ from acptui.protocol.state import (
     MessageEntry,
     NoticeEntry,
     PlanEntry,
+    ShellEntry,
     SubagentEntry,
     ToolCallEntry,
     blocks_text,
 )
 from acptui.ui.render import pill, status_icon, tool_icon
 from acptui.ui.widgets.diff import DiffView
-from acptui.ui.widgets.terminal import TerminalView
+from acptui.ui.widgets.terminal import ShellView, TerminalView
 
 
 if TYPE_CHECKING:
@@ -641,6 +642,8 @@ def make_view(  # noqa: PLR0911
             return CompactionView(entry)
         case SubagentEntry():
             return SubagentView(entry)
+        case ShellEntry():
+            return ShellView(entry, state.cwd)
 
 
 def raw_json(value: object) -> str:

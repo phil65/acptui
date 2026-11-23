@@ -79,6 +79,8 @@ if TYPE_CHECKING:
         Usage as TurnUsage,
     )
 
+    from acptui.shell import ShellCommand
+
 MessageRole = Literal["user", "agent", "thought", "session"]
 SessionActivity = Literal["idle", "running", "requires_action", "unknown"]
 
@@ -216,7 +218,22 @@ class SubagentEntry:
         return self.title or self.session_id
 
 
-Entry = MessageEntry | ToolCallEntry | PlanEntry | NoticeEntry | CompactionEntry | SubagentEntry
+@dataclass(eq=False)
+class ShellEntry:
+    """A command the user ran in shell mode (local: the agent sees it with the next prompt)."""
+
+    command: ShellCommand
+
+
+Entry = (
+    MessageEntry
+    | ToolCallEntry
+    | PlanEntry
+    | NoticeEntry
+    | CompactionEntry
+    | SubagentEntry
+    | ShellEntry
+)
 """An item of the conversation timeline."""
 
 
@@ -422,6 +439,12 @@ class SessionState:
         if entry.message_id is None and ("user", message_id) not in self._messages:
             entry.message_id = message_id
             self._messages["user", message_id] = entry
+
+    def add_shell_command(self, command: ShellCommand) -> list[Change]:
+        """Show a command the user runs in shell mode."""
+        entry = ShellEntry(command)
+        self.entries.append(entry)
+        return [EntryAdded(entry)]
 
     def add_notice(self, severity: str, title: str, description: str | None = None) -> list[Change]:
         """Add a client-side notice to the timeline."""

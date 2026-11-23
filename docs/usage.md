@@ -65,6 +65,8 @@ the account, background work, mode and model, the context window and the cost.
 | `f5` | Restart the agent |
 | `f1` | Help |
 | `ctrl+b` | Files panel: the workspace and mounts as a tree (see Files) |
+| `!` / `$` | On an empty prompt: shell mode (see Shell mode); `esc` goes back |
+| `ctrl+g` | Drop the shell output waiting for the next prompt |
 | `f12` | Screenshot: the screen as SVG and as text (Downloads), text copied to the clipboard |
 | `ctrl+q` | Quit |
 
@@ -74,6 +76,24 @@ the account, background work, mode and model, the context window and the cost.
 text files are embedded when the agent accepts embedded context, images and audio are
 attached when it accepts them, anything else is sent as a resource link. Escape spaces
 in paths with a backslash (`@my\ file.txt`); the completion does that for you.
+
+## Shell mode
+
+`!` (or `$`) on an empty prompt switches it to shell commands: the border turns
+orange and `enter` runs the command in the session's working directory, shown in the
+conversation with its output and exit code. `esc`, or `backspace` on an empty prompt,
+goes back to messages for the agent; `up` / `down` walk the shell history.
+
+On Linux and macOS one bash or zsh (your `$SHELL` if it is one of them) runs for the
+whole session, so `cd`, `export` and an activated virtualenv carry over between
+commands; while a command runs, `enter` types the line into it (a `read`, a `y/n`
+question) and `ctrl+c` or `esc` interrupts it. On Windows each command runs on its
+own. Pagers are set to `cat`; full-screen programs (editors, `htop`) need a real
+terminal.
+
+The agent sees what you ran: commands finished since your last prompt are attached to
+the next one, with their output (long output cut to its start and end). The line above
+the prompt lists them; `ctrl+g` drops them.
 
 ## Files
 

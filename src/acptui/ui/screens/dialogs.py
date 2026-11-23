@@ -474,6 +474,8 @@ A terminal UI for AI coding agents speaking **ACP v2**.
 | `ctrl+p` | Command palette |
 | `f5` | Restart the agent |
 | `ctrl+b` | Files panel; `a` mentions the highlighted node |
+| `!` / `$` | Shell mode (on an empty prompt); `esc` back, `ctrl+c` interrupts |
+| `ctrl+g` | Drop the shell output waiting for the next prompt |
 | `f12` | Screenshot: SVG + text to Downloads, text copied |
 | `ctrl+q` | Quit |
 

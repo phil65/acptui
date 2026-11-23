@@ -88,19 +88,27 @@ class PromptInput(TextArea):
         border: tall $primary 50%;
         &:focus { border: tall $primary; }
         &.-disabled { border: tall $panel; }
+        &.-shell { border: tall $warning 50%; }
+        &.-shell:focus { border: tall $warning; }
     }
     """
+
+    SHELL_PLACEHOLDER = "Shell command  (esc: back to the agent, ctrl+c: interrupt)"
 
     BINDINGS: ClassVar = [
         Binding("ctrl+j,shift+enter,alt+enter", "newline", "New line", show=False),
     ]
 
     class Submitted(Message):
-        """The user sent the prompt."""
+        """The user sent the prompt (``shell``: a command for shell mode)."""
 
-        def __init__(self, text: str) -> None:
+        def __init__(self, text: str, *, shell: bool = False) -> None:
             super().__init__()
             self.text = text
+            self.shell = shell
+
+    class InterruptShell(Message):
+        """``ctrl+c`` in shell mode: interrupt the running command."""
 
     def __init__(self, cwd: Path) -> None:
         super().__init__(
@@ -115,6 +123,9 @@ class PromptInput(TextArea):
         self.cwd = cwd
         self.commands: list[AvailableCommand] = []
         self.prompt_history: list[str] = []
+        self.shell_history: list[str] = []
+        self.shell_mode = False
+        """Whether the prompt takes a shell command (``!`` or ``$`` on an empty prompt)."""
         self._history_index: int | None = None
         self._completion_context: CompletionContext | None = None
         self.completion_list: CompletionList | None = None
@@ -129,15 +140,37 @@ class PromptInput(TextArea):
     @suggestion.setter
     def suggestion(self, text: str) -> None:
         self._suggestion = text
-        first_line = text.splitlines()[0] if text else ""
-        self.placeholder = (
-            f"{first_line}  (tab: use suggestion)" if text else self._default_placeholder
-        )
+        self._update_placeholder()
+
+    def _update_placeholder(self) -> None:
+        if self.shell_mode:
+            self.placeholder = self.SHELL_PLACEHOLDER
+        elif self._suggestion:
+            first_line = self._suggestion.splitlines()[0]
+            self.placeholder = f"{first_line}  (tab: use suggestion)"
+        else:
+            self.placeholder = self._default_placeholder
+
+    def set_shell_mode(self, on: bool) -> None:
+        """Switch between messages for the agent and shell commands."""
+        self.shell_mode = on
+        self.set_class(on, "-shell")
+        self._history_index = None
+        if on and self.completion_list is not None:
+            self.completion_list.hide()
+        self._update_placeholder()
+
+    @property
+    def _history(self) -> list[str]:
+        return self.shell_history if self.shell_mode else self.prompt_history
 
     # --- Completion -----------------------------------------------------------------
 
     def _update_completions(self) -> None:
         if self.completion_list is None:
+            return
+        if self.shell_mode:
+            self.completion_list.hide()
             return
         row, column = self.cursor_location
         line = self.document.get_line(row)[:column]
@@ -191,6 +224,8 @@ class PromptInput(TextArea):
     async def _on_key(self, event: Key) -> None:  # noqa: PLR0911
         completion_list = self.completion_list
         popup = completion_list is not None and completion_list.is_shown
+        if self._shell_key(event):
+            return
         match event.key:
             case "enter":
                 event.stop()
@@ -199,7 +234,7 @@ class PromptInput(TextArea):
                     return
                 self._submit()
                 return
-            case "tab" if not popup and not self.text and self._suggestion:
+            case "tab" if not popup and not self.text and self._suggestion and not self.shell_mode:
                 event.stop()
                 event.prevent_default()
                 self.load_text(self._suggestion)
@@ -225,7 +260,7 @@ class PromptInput(TextArea):
                 event.prevent_default()
                 completion_list.hide()
                 return
-            case "up" if self.cursor_location[0] == 0 and self.prompt_history:
+            case "up" if self.cursor_location[0] == 0 and self._history:
                 event.stop()
                 event.prevent_default()
                 self._history_step(-1)
@@ -240,24 +275,45 @@ class PromptInput(TextArea):
                 return
         await super()._on_key(event)
 
+    def _shell_key(self, event: Key) -> bool:
+        """Keys of shell mode: ``!`` / ``$`` to enter it, ``esc`` / ``backspace`` to leave."""
+        enter = event.character in {"!", "$"} and not self.text and not self.shell_mode
+        leave = self.shell_mode and (
+            event.key == "escape" or (event.key == "backspace" and not self.text)
+        )
+        interrupt = (
+            self.shell_mode and event.key == "ctrl+c" and self.selection.start == self.selection.end
+        )
+        if not (enter or leave or interrupt):
+            return False
+        event.stop()
+        event.prevent_default()
+        if interrupt:
+            self.post_message(self.InterruptShell())
+        else:
+            self.set_shell_mode(enter)
+        return True
+
     def _history_step(self, step: int) -> None:
-        index = len(self.prompt_history) if self._history_index is None else self._history_index
+        history = self._history
+        index = len(history) if self._history_index is None else self._history_index
         index += step
-        if index >= len(self.prompt_history):
+        if index >= len(history):
             self._history_index = None
             self.load_text("")
             return
         self._history_index = max(0, index)
-        self.load_text(self.prompt_history[self._history_index])
+        self.load_text(history[self._history_index])
         self.move_cursor(self.document.end)
 
     def _submit(self) -> None:
         text = self.text.strip()
         if not text:
             return
-        if not self.prompt_history or self.prompt_history[-1] != text:
-            self.prompt_history.append(text)
+        history = self._history
+        if not history or history[-1] != text:
+            history.append(text)
         self._history_index = None
         if self.completion_list is not None:
             self.completion_list.hide()
-        self.post_message(self.Submitted(text))
+        self.post_message(self.Submitted(text, shell=self.shell_mode))

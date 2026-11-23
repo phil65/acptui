@@ -16,7 +16,8 @@ from acptui.ui.render import pill, terminal_text
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
-    from acptui.protocol.state import TerminalState
+    from acptui.protocol.state import ShellEntry, TerminalState
+    from acptui.shell import ShellCommand
 
 
 REFRESH_INTERVAL = 0.1
@@ -64,12 +65,15 @@ class TerminalView(Vertical):
             yield Static(self._header(), classes="terminal-header")
             yield Button("cancel", variant="warning", compact=True, id="terminal-cancel")
         with VerticalScroll(classes="terminal-output"):
-            yield Static(terminal_text(bytes(self.terminal.output)), id="terminal-text")
+            yield Static(terminal_text(self._output()), id="terminal-text")
 
     def on_mount(self) -> None:
         self.query_one(".terminal-output", VerticalScroll).anchor()
         self._sync_cancel()
         self.set_interval(REFRESH_INTERVAL, self._flush)
+
+    def _output(self) -> bytes:
+        return bytes(self.terminal.output)
 
     def _header(self) -> Content:
         terminal = self.terminal
@@ -101,9 +105,67 @@ class TerminalView(Vertical):
             return
         self._dirty = False
         self.query_one(".terminal-header", Static).update(self._header())
-        self.query_one("#terminal-text", Static).update(terminal_text(bytes(self.terminal.output)))
+        self.query_one("#terminal-text", Static).update(terminal_text(self._output()))
         self._sync_cancel()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
         self.post_message(self.CancelRequested(self.terminal.terminal_id))
+
+
+class ShellView(TerminalView):
+    """A command the user ran in shell mode: like an agent terminal, plus where it ran."""
+
+    DEFAULT_CSS = """
+    ShellView { border-left: outer $warning; }
+    """
+
+    class InterruptRequested(Message):
+        """The user asked to interrupt the command."""
+
+        def __init__(self, entry: ShellEntry) -> None:
+            super().__init__()
+            self.entry = entry
+
+    def __init__(self, entry: ShellEntry, session_cwd: str) -> None:
+        self.entry = entry
+        self.session_cwd = session_cwd
+        Vertical.__init__(self, classes="shell-command")
+        self._dirty = False
+
+    @property
+    def command(self) -> ShellCommand:
+        """The command shown."""
+        return self.entry.command
+
+    def _output(self) -> bytes:
+        return self.command.display_output
+
+    def _header(self) -> Content:
+        command = self.command
+        prompt = Content.assemble(("! ", "bold $warning"), (command.command, "bold"))
+        if command.cwd != self.session_cwd:
+            prompt = Content.assemble(
+                prompt, ("  in ", "$text-muted"), (command.cwd, "$text-muted")
+            )
+        code = command.exit_code
+        if code is None:
+            badge = pill("running", "$accent-muted", "$text-accent")
+        elif code == 0:
+            badge = pill("exit 0", "$success-muted", "$text-success")
+        else:
+            badge = pill(f"exit {code}", "$error-muted", "$text-error")
+        return Content.assemble(prompt, "  ", badge)
+
+    def _sync_cancel(self) -> None:
+        button = self.query_one("#terminal-cancel", Button)
+        button.label = "interrupt"
+        button.display = not self.command.done
+
+    def refresh_entry(self) -> None:
+        """Redraw after new output (at most every :data:`REFRESH_INTERVAL`)."""
+        self.refresh_terminal()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.post_message(self.InterruptRequested(self.entry))

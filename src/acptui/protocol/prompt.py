@@ -8,6 +8,7 @@ import mimetypes
 from pathlib import Path
 import re
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from aclientp.schema.v2 import (
     AudioContent,
@@ -19,11 +20,15 @@ from aclientp.schema.v2 import (
     TextResourceContents,
 )
 
+from acptui.protocol.content import SHELL_URI_PREFIX
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from aclientp.schema.v2 import ContentBlock
+
+    from acptui.shell import ShellCommand
 
 
 MENTION = re.compile(r"(?<![\w@])@((?:\\ |[^\s])+)")
@@ -118,6 +123,21 @@ def file_block(path: Path, options: PromptOptions) -> ContentBlock:
                 )
         return ResourceLink(name=path.name, uri=uri, mime_type=mime, size=size)
     return ResourceLink(name=path.name, uri=uri, mime_type="inode/directory")
+
+
+def shell_block(command: ShellCommand, options: PromptOptions) -> ContentBlock:
+    """A shell command the user ran, with its output, as context for the agent.
+
+    Embedded as a resource where the agent accepts that (shown as one line in the
+    message), else as text.
+    """
+    text = command.context_text()
+    if options.embedded_context:
+        uri = SHELL_URI_PREFIX + quote(command.command, safe="")
+        return EmbeddedResource(
+            resource=TextResourceContents(text=text, uri=uri, mime_type="text/plain")
+        )
+    return TextContent(text=f"\n\nI ran a shell command:\n\n```\n{text}```\n")
 
 
 def build_prompt(

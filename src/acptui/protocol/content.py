@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
+from urllib.parse import unquote
 
 from aclientp.schema.v2 import (
     AudioContent,
@@ -44,6 +45,10 @@ LANGUAGES = {
     ".cpp": "cpp",
     ".java": "java",
 }
+
+
+SHELL_URI_PREFIX = "shell:"
+"""URI prefix of a shell command's output attached to a prompt (``shell:<quoted command>``)."""
 
 
 def human_size(size: int) -> str:
@@ -89,6 +94,8 @@ def describe_block(block: ContentBlock, cwd: str | Path = "/") -> str | None:  #
                 else ""
             )
             return f"{name} ({relative_display(block.uri, cwd)}{size})"
+        case EmbeddedResource() if block.resource.uri.startswith(SHELL_URI_PREFIX):
+            return f"shell: $ {unquote(block.resource.uri.removeprefix(SHELL_URI_PREFIX))}"
         case EmbeddedResource():
             return f"file: {relative_display(block.resource.uri, cwd)}"
         case ImageContent():
