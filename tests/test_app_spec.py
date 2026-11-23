@@ -393,7 +393,7 @@ async def test_screenshot_saves_text_and_svg(demo_spec: AgentSpec, workdir: Path
         await connected(pilot, app)
         app.action_screenshot("shot", str(workdir / "shots"))
         await pilot.pause()
-    text = (workdir / "shots" / "shot.txt").read_text()
+    text = (workdir / "shots" / "shot.txt").read_text(encoding="utf-8")
     assert text.strip()
     assert text == app.clipboard
-    assert (workdir / "shots" / "shot.svg").read_text().startswith("<svg")
+    assert (workdir / "shots" / "shot.svg").read_text(encoding="utf-8").startswith("<svg")
