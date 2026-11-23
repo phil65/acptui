@@ -5,6 +5,7 @@ from __future__ import annotations
 from aclientp.schema.v2 import (
     AgentMessage,
     AgentMessageChunk,
+    AgentMessageCursorAnchor,
     AgentThoughtChunk,
     AvailableCommandsUpdate,
     Command,
@@ -12,6 +13,10 @@ from aclientp.schema.v2 import (
     CompactionUpdate,
     Content,
     Cost,
+    CursorCapabilities,
+    CursorForkCapabilities,
+    CursorToolCallAnchor,
+    CursorUpdate,
     Error,
     IdleStateSessionUpdate,
     Notice,
@@ -273,3 +278,64 @@ def test_unknown_updates_are_ignored() -> None:
     assert state.entries == []
     assert isinstance(state.apply(ToolCallSessionUpdate(tool_call_id="z"))[0], EntryAdded)
     assert isinstance(state.entries[0], ToolCallEntry)
+
+
+def _forkable() -> SessionState:
+    """A session of two turns with a cursor after the first agent message."""
+    state = _state()
+    state.apply(UserMessageChunk(message_id="u1", content=TextContent(text="first")))
+    state.apply(AgentMessageChunk(message_id="a1", content=TextContent(text="one")))
+    state.apply(ToolCallSessionUpdate(tool_call_id="t1", title="Run", status="completed"))
+    state.apply(UserMessageChunk(message_id="u2", content=TextContent(text="second")))
+    state.apply(AgentMessageChunk(message_id="a2", content=TextContent(text="two")))
+    state.title = "Work"
+    return state
+
+
+def _cursor(
+    cursor_id: str, anchor: AgentMessageCursorAnchor | CursorToolCallAnchor
+) -> CursorUpdate:
+    caps = CursorCapabilities(fork=CursorForkCapabilities())
+    return CursorUpdate(cursor_id=cursor_id, anchor=anchor, capabilities=caps)
+
+
+def test_a_whole_fork_copies_the_timeline() -> None:
+    state = _forkable()
+    fork = state.forked("s2")
+
+    assert fork.session_id == "s2"
+    assert [type(e) for e in fork.entries] == [type(e) for e in state.entries]
+    assert fork.title is None  # The agent titles the fork
+    # Copies: the source goes on without changing the fork
+    state.apply(AgentMessageChunk(message_id="a2", content=TextContent(text=" more")))
+    last = fork.entries[-1]
+    assert isinstance(last, MessageEntry)
+    assert last.text == "two"
+    assert fork.tool_calls["t1"] is fork.entries[2]
+
+
+def test_a_fork_at_a_cursor_copies_what_comes_before_it() -> None:
+    state = _forkable()
+    state.apply(_cursor("c1", AgentMessageCursorAnchor(message_id="a1", position="after")))
+    after = state.forked("s2", state.cursors["c1"])
+    assert [e.text for e in after.entries if isinstance(e, MessageEntry)] == ["first", "one"]
+    assert "t1" not in after.tool_calls
+
+    state.apply(_cursor("c2", CursorToolCallAnchor(tool_call_id="t1", position="after")))
+    with_tool = state.forked("s3", state.cursors["c2"])
+    assert len(with_tool.entries) == 3
+    assert with_tool.tool_calls["t1"] is with_tool.entries[2]
+
+    state.apply(_cursor("c3", AgentMessageCursorAnchor(message_id="a1", position="before")))
+    before = state.forked("s4", state.cursors["c3"])
+    assert [e.text for e in before.entries if isinstance(e, MessageEntry)] == ["first"]
+    assert not before.cursors  # The source's cursors are not the fork's
+
+
+def test_a_kept_title_outlasts_the_replayed_ones() -> None:
+    state = SessionState("s1", "/work", title="Renamed", replaying=True, keep_title=True)
+    state.apply(SessionInfoUpdate(title="First prompt"))  # From the replayed history
+    assert state.title == "Renamed"
+    state.apply(ReplayComplete())
+    state.apply(SessionInfoUpdate(title="Newer"))
+    assert state.title == "Newer"

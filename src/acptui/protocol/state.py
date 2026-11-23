@@ -10,18 +10,23 @@ from __future__ import annotations
 
 import base64
 import binascii
+import copy
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from aclientp.schema.v2 import (
     AgentMessage,
     AgentMessageChunk,
+    AgentMessageCursorAnchor,
     AgentThought,
     AgentThoughtChunk,
+    AgentThoughtCursorAnchor,
     AvailableCommandsUpdate,
     CompactionSummaryChunk,
     CompactionUpdate,
     ConfigOptionUpdate,
+    CursorCompactionAnchor,
+    CursorToolCallAnchor,
     CursorUpdate,
     IdleStateSessionUpdate,
     Notice,
@@ -37,6 +42,7 @@ from aclientp.schema.v2 import (
     SessionInfoUpdate,
     SessionMessage,
     SessionMessageChunk,
+    SessionMessageCursorAnchor,
     SubagentUpdate,
     TerminalOutputChunk,
     TerminalUpdate,
@@ -48,6 +54,7 @@ from aclientp.schema.v2 import (
     UsageUpdate,
     UserMessage,
     UserMessageChunk,
+    UserMessageCursorAnchor,
 )
 from aclientp.schema.v2.base import is_set
 
@@ -74,6 +81,14 @@ if TYPE_CHECKING:
 
 MessageRole = Literal["user", "agent", "thought", "session"]
 SessionActivity = Literal["idle", "running", "requires_action", "unknown"]
+
+ANCHOR_ROLES: dict[str, MessageRole] = {
+    "user_message": "user",
+    "agent_message": "agent",
+    "agent_thought": "thought",
+    "session_message": "session",
+}
+"""The message role of each message cursor anchor type."""
 
 MAX_TERMINAL_BYTES = 512 * 1024
 """Terminal output kept per terminal; older bytes are dropped."""
@@ -334,6 +349,8 @@ class SessionState:
     parent_id: str | None = None
     """For a subagent session: the session that owns it."""
     replaying: bool = False
+    keep_title: bool = False
+    """Keep ``title`` through a replay (the replayed history's titles are older)."""
     _messages: dict[tuple[MessageRole, str], MessageEntry] = field(default_factory=dict)
     _compactions: dict[str, CompactionEntry] = field(default_factory=dict)
 
@@ -341,6 +358,58 @@ class SessionState:
     def running(self) -> bool:
         """Whether the agent is working on a turn."""
         return self.activity in {"running", "requires_action"}
+
+    # --- Forks --------------------------------------------------------------------
+
+    def anchor_index(self, cursor: CursorState) -> int | None:
+        """How many timeline entries come before ``cursor`` (None: it cannot be placed)."""
+        anchor = cursor.anchor
+        match anchor:
+            case CursorToolCallAnchor(tool_call_id=tool_call_id):
+                entry: Entry | None = self.tool_calls.get(tool_call_id)
+            case CursorCompactionAnchor(compaction_id=compaction_id):
+                entry = self._compactions.get(compaction_id)
+            case (
+                UserMessageCursorAnchor()
+                | AgentMessageCursorAnchor()
+                | AgentThoughtCursorAnchor()
+                | SessionMessageCursorAnchor()
+            ):
+                role = ANCHOR_ROLES[anchor.type]
+                entry = self._messages.get((role, anchor.message_id))
+            case _:
+                return None
+        if entry is None or anchor is None or anchor.position not in {"before", "after"}:
+            return None
+        index = next((i for i, e in enumerate(self.entries) if e is entry), None)
+        if index is None:
+            return None
+        return index if anchor.position == "before" else index + 1
+
+    def forked(self, session_id: str, cursor: CursorState | None = None) -> SessionState:
+        """A fork of this session: its timeline (up to ``cursor``), under ``session_id``.
+
+        What the agent forked is its history; this is what the client shows of it. The
+        entries are copies: the source session goes on independently.
+        """
+        cut = len(self.entries) if cursor is None else self.anchor_index(cursor)
+        source = copy.deepcopy(self)
+        entries = source.entries[: len(self.entries) if cut is None else cut]
+        kept = {id(e) for e in entries}
+        return SessionState(  # Untitled: the fork's title is the agent's to give
+            session_id,
+            self.cwd,
+            entries=entries,
+            tool_calls={k: v for k, v in source.tool_calls.items() if id(v) in kept},
+            terminals=source.terminals,
+            plans={k: v for k, v in source.plans.items() if id(v) in kept},
+            commands=list(self.commands),
+            config_options=list(self.config_options),
+            usage=self.usage,
+            subagents={k: v for k, v in source.subagents.items() if id(v) in kept},
+            _messages={k: v for k, v in source._messages.items() if id(v) in kept},
+            _compactions={k: v for k, v in source._compactions.items() if id(v) in kept},
+        )
 
     # --- Local events -------------------------------------------------------------
 
@@ -406,8 +475,8 @@ class SessionState:
             case SessionInfoUpdate():
                 if is_set(update.updated_at):
                     self.updated_at = update.updated_at
-                if not is_set(update.title):
-                    return []
+                if not is_set(update.title) or self.keep_title:
+                    return []  # A replayed title is older than the one kept
                 self.title = update.title
                 return [SessionChanged("title")]
             case UsageUpdate():
@@ -427,6 +496,7 @@ class SessionState:
                 return [*changes, EntryChanged(compaction)]
             case ReplayComplete():
                 self.replaying = False
+                self.keep_title = False
                 return [SessionChanged("replay")]
             case PromptSuggestionsUpdate():
                 self.suggestions = list(update.suggestions)
@@ -627,6 +697,8 @@ class SessionState:
         changes: list[Change] = []
         if is_set(update.background):
             self.background = list(update.background or ())
+        if not self.replaying:  # A turn after a replay that never said it completed
+            self.keep_title = False
         match update:
             case RunningStateSessionUpdate():
                 self.activity = "running"

@@ -25,6 +25,7 @@ from acptui.ui.widgets.blocks import (
     SubagentView,
     ToolCallHeader,
     ToolCallView,
+    UserMessageView,
 )
 from acptui.ui.widgets.diff import DiffView
 from tests.test_app import SIZE, connected, send, session, stop_reason, until
@@ -207,6 +208,11 @@ async def test_fork_rename_and_session_list(demo_spec: AgentSpec, workdir: Path)
         options.highlighted = 1
         await pilot.press("enter")
         await until(pilot, lambda: screen.state is not None and screen.state.session_id != original)
+        # The fork shows its history up to the cursor
+        assert any(
+            isinstance(e, MessageEntry) and "forkable" in e.text for e in screen.state.entries
+        )
+        await until(pilot, lambda: bool(screen.query(UserMessageView)))
 
         await pilot.press("ctrl+r")
         assert isinstance(app.screen, SessionListScreen)
@@ -343,3 +349,36 @@ async def test_url_dialog_closes_on_complete(workdir: Path) -> None:
         dialog.complete()
         await pilot.pause()
     assert results == [AcceptElicitationResponse()]
+
+
+async def test_resume_keeps_the_title(demo_spec: AgentSpec, workdir: Path) -> None:
+    """The resume response has no title: the session list's stays."""
+    app = AcpTui(Settings(), workdir, demo_spec)
+    async with app.run_test(size=SIZE) as pilot:
+        screen = await connected(pilot, app)
+        await send(pilot, "/echo keep me")
+        await until(pilot, lambda: stop_reason(screen) == "end_turn")
+        assert screen.state is not None
+        original = screen.state.session_id
+        await pilot.press("f2")
+        assert isinstance(app.screen, TextInputScreen)
+        app.screen.query_one(Input).value = "Kept title"
+        await pilot.press("enter")
+        await until(pilot, lambda: screen.state is not None and screen.state.title == "Kept title")
+
+        await pilot.press("ctrl+n")
+        await until(pilot, lambda: screen.state is not None and screen.state.session_id != original)
+        screen.sessions.pop(original)  # Only the session list knows the title now
+        await pilot.press("ctrl+r")
+        assert isinstance(app.screen, SessionListScreen)
+        listing = app.screen
+        await until(pilot, lambda: original in listing.sessions)
+        options = listing.query_one(OptionList)
+        options.highlighted = list(listing.sessions).index(original)
+        await pilot.press("enter")
+        await until(pilot, lambda: bool(screen.state and screen.state.session_id == original))
+        # The replayed history names the first title; the list's (current) one is kept
+        await until(pilot, lambda: screen.state is not None and screen.state.title == "Kept title")
+        await pilot.pause(0.3)
+        assert screen.state is not None
+        assert screen.state.title == "Kept title"

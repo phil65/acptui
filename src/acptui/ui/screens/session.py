@@ -327,8 +327,11 @@ class SessionScreen(Screen[None]):
         commands: list[AvailableCommand] | object,
         *,
         replaying: bool = False,
+        state: SessionState | None = None,
     ) -> SessionState:
-        state = SessionState(session_id, str(self.cwd), replaying=replaying)
+        """Make ``session_id`` the shown session (a new state, or ``state``)."""
+        if state is None:
+            state = SessionState(session_id, str(self.cwd), replaying=replaying)
         self.sessions[session_id] = state
         self.state = state
         self.status.state = state
@@ -363,9 +366,18 @@ class SessionScreen(Screen[None]):
                 fatal=False,
             )
 
-    async def _resume(self, session_id: str) -> None:
+    async def _resume(self, session_id: str, title: str | None = None) -> None:
+        """Resume a session with its history replayed.
+
+        The resume response has no title: the one known (the session list's, else the
+        session's from before) stays; the titles in the replayed history are older.
+        """
         connection = self._connection()
+        known = self.sessions.get(session_id)
+        title = title or (known.title if known is not None else None)
         state = self._show_session(session_id, None, None, replaying=True)
+        state.title = title
+        state.keep_title = title is not None
         try:
             response = await connection.resume_session(session_id, setup=self.setup)
         except RequestError as exc:
@@ -624,13 +636,20 @@ class SessionScreen(Screen[None]):
         if self.connection is None or not self.connected:
             return
 
+        listing = SessionListScreen(self.connection)
+
         def chosen(session_id: str | None) -> None:
             if session_id is not None:
+                info = listing.sessions.get(session_id)
+                title = info.title if info is not None and is_set(info.title) else None
                 self.run_worker(
-                    self._resume(session_id), group="session", exclusive=True, exit_on_error=False
+                    self._resume(session_id, title),
+                    group="session",
+                    exclusive=True,
+                    exit_on_error=False,
                 )
 
-        self.app.push_screen(SessionListScreen(self.connection), callback=chosen)
+        self.app.push_screen(listing, callback=chosen)
 
     def action_fork_session(self) -> None:
         """Fork the session (whole, or at a cursor the agent offers)."""
@@ -645,7 +664,7 @@ class SessionScreen(Screen[None]):
         def chosen(choice: tuple[str | None] | None) -> None:
             if choice is not None:
                 self.run_worker(
-                    self._fork(state.session_id, choice[0]),
+                    self._fork(state, choice[0]),
                     group="session",
                     exclusive=True,
                     exit_on_error=False,
@@ -653,14 +672,21 @@ class SessionScreen(Screen[None]):
 
         self.app.push_screen(ForkScreen(state), callback=chosen)
 
-    async def _fork(self, session_id: str, cursor_id: str | None) -> None:
+    async def _fork(self, source: SessionState, cursor_id: str | None) -> None:
+        connection = self._connection()
         try:
-            response = await self._connection().fork_session(session_id, cursor_id, self.setup)
+            response = await connection.fork_session(source.session_id, cursor_id, self.setup)
         except (RequestError, ConnectionError) as exc:
             self.notify(f"Could not fork: {exc}", severity="error")
             return
+        # The fork has the history up to the cursor (all of it without): show that part
+        cursor = source.cursors.get(cursor_id) if cursor_id is not None else None
+        forked = source.forked(response.session_id, cursor)
         self._show_session(
-            response.session_id, response.config_options, response.available_commands
+            response.session_id,
+            response.config_options,
+            response.available_commands,
+            state=forked,
         )
         self.notify("Forked: now in the new session", timeout=3)
 
