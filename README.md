@@ -80,7 +80,7 @@ ACP v2 is a draft; agents get v2 support one by one. acptui negotiates the versi
 | `codex` | Codex | `codex-acp` | yes (2.7+) |
 | `gemini` | Gemini CLI | `gemini --experimental-acp` | not yet |
 | `opencode` | OpenCode | `opencode acp` | not yet (v1) |
-| `agentpool` | AgentPool | `agentpool serve-acp` | not yet |
+| `agentpool` | AgentPool | `agentpool serve-acp` | yes (2.11+) |
 | `demo` | Demo agent | `python -m acptui.demo` | yes |
 
 Add your own agents (or override these) in `config.toml` in the platform config

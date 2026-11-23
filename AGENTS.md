@@ -84,5 +84,7 @@ uv run acptui run demo        # try it
   markers. `[tool.ty.src]` includes `tests` on purpose.
 - Problems in aclientp are fixed in aclientp (worktree, tests, release), not worked
   around here.
-- The registry lists agents that do not speak v2 yet (gemini, opencode, agentpool):
-  they get the "unsupported protocol" error, which is intended.
+- The registry lists agents that do not speak v2 yet (gemini, opencode): they get the
+  "unsupported protocol" error, which is intended. agentpool (2.11+) speaks v2: its
+  test models (`model: {type: test, call_tools: [...], tool_args: {...}}` in an
+  `agentpool.yml` of the project, `serve-acp --agent NAME`) make a free end-to-end check.
