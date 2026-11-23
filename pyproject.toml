@@ -39,6 +39,7 @@ dependencies = [
   "rich>=14",
   "schemez",
   "textual>=8.2.8",
+  "upathtools[tree-sitter]>=1.25.2",
 ]
 
 [project.urls]

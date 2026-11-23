@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from aclientp.exceptions import RequestError
@@ -30,6 +31,7 @@ from textual.content import Content
 from textual.screen import Screen
 from textual.widgets import Footer, Static
 
+from acptui.files import Files
 from acptui.protocol.connection import (
     AgentConnection,
     AgentError,
@@ -52,13 +54,13 @@ from acptui.ui.screens.log import LogScreen
 from acptui.ui.screens.permission import PermissionScreen, cancelled
 from acptui.ui.screens.providers import ProvidersScreen
 from acptui.ui.widgets.conversation import ConversationView
+from acptui.ui.widgets.files import FilesPanel, FileTree
 from acptui.ui.widgets.prompt import CompletionList, PromptInput
 from acptui.ui.widgets.status import StatusBar
 
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-    from pathlib import Path
+    from collections.abc import Awaitable, Callable, Mapping
 
     from aclientp.schema.v2 import (
         AuthStatusUpdateNotification,
@@ -75,6 +77,7 @@ if TYPE_CHECKING:
     from aclientp.schema.v2.base import JsonValue
     from textual.app import ComposeResult
     from textual.screen import ModalScreen
+    from textual.timer import Timer
     from textual.widget import Widget
 
     from acptui.config import AgentSpec, DiffViewMode
@@ -174,6 +177,7 @@ class SessionScreen(Screen[None]):
         Binding("ctrl+d", "toggle_diff", "Diff view", show=False),
         Binding("ctrl+f", "fork_session", "Fork", show=False),
         Binding("ctrl+l", "show_log", "Log"),
+        Binding("ctrl+b", "toggle_files", "Files"),
         Binding("f1", "help", "Help"),
         Binding("f2", "rename_session", "Rename", show=False),
         Binding("f5", "restart", "Restart", show=False),
@@ -191,10 +195,14 @@ class SessionScreen(Screen[None]):
         expand_thoughts: bool = False,
         resume_id: str | None = None,
         setup: SessionSetup | None = None,
+        mounts: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__()
         self.spec = spec
         self.cwd = cwd
+        self.files = Files(cwd, mounts)
+        """The files panel's filesystem: the workspace (browsable into files) and the mounts."""
+        self._files_timer: Timer | None = None
         self.agent_log = agent_log
         self.diff_mode: DiffViewMode = diff_mode
         self.expand_thoughts = expand_thoughts
@@ -214,7 +222,46 @@ class SessionScreen(Screen[None]):
 
     # --- Layout ---------------------------------------------------------------------
 
+    def action_toggle_files(self) -> None:
+        """Show or hide the files panel (and mark what the agent touched)."""
+        panel = self.query_one(FilesPanel)
+        panel.toggle()
+        if panel.open:
+            self._mark_touched()
+            if self._files_timer is None:
+                self._files_timer = self.set_interval(2.0, self._mark_touched, name="files-markers")
+            else:
+                self._files_timer.resume()
+        else:
+            if self._files_timer is not None:
+                self._files_timer.pause()
+            self.prompt.focus()
+
+    def _mark_touched(self) -> None:
+        panel = self.query_one(FilesPanel)
+        if panel.open and self.state is not None:
+            panel.file_tree.set_touched(self._touched_paths())
+
+    def _touched_paths(self) -> set[str]:
+        """Workspace-relative paths of the session's tool call locations."""
+        root = self.cwd.resolve()
+        touched: set[str] = set()
+        for tool_call in self.state.tool_calls.values() if self.state else ():
+            for location in tool_call.locations:
+                path = Path(location.path)
+                path = path if path.is_absolute() else root / path
+                if path.is_relative_to(root):
+                    touched.add(path.relative_to(root).as_posix())
+        return touched
+
+    def on_file_tree_mention(self, message: FileTree.Mention) -> None:
+        """Put ``@node`` into the prompt, where the cursor is."""
+        message.stop()
+        self.prompt.insert(f"@{message.text} ")
+        self.prompt.focus()
+
     def compose(self) -> ComposeResult:
+        yield FilesPanel(self.files)
         yield ConversationView(
             self.agent_log,
             diff_mode=self.diff_mode,
@@ -586,7 +633,7 @@ class SessionScreen(Screen[None]):
             audio=connection.supports_audio,
             skills=skills if connection.supports_skills else frozenset(),
         )
-        blocks = build_prompt(message.text, self.cwd, options)
+        blocks = build_prompt(message.text, self.cwd, options, resolve=self.files.mention_block)
         changes = state.add_local_user_message(blocks)
         entry = changes[0].entry if changes and isinstance(changes[0], EntryAdded) else None
         self.conversation.push(changes)

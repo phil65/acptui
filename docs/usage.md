@@ -64,6 +64,7 @@ the account, background work, mode and model, the context window and the cost.
 | `ctrl+p` | Command palette: everything above, login / logout, providers, option values |
 | `f5` | Restart the agent |
 | `f1` | Help |
+| `ctrl+b` | Files panel: the workspace and mounts as a tree (see Files) |
 | `f12` | Screenshot: the screen as SVG and as text (Downloads), text copied to the clipboard |
 | `ctrl+q` | Quit |
 
@@ -73,6 +74,20 @@ the account, background work, mode and model, the context window and the cost.
 text files are embedded when the agent accepts embedded context, images and audio are
 attached when it accepts them, anything else is sent as a resource link. Escape spaces
 in paths with a backslash (`@my\ file.txt`); the completion does that for you.
+
+## Files
+
+`ctrl+b` opens the files panel: the working directory under `workspace/`, and one folder
+per mount (see `mounts` in the configuration). Files acptui can look into open like
+folders: archives by their members, Markdown files by section, source files by class
+and function (with `upathtools[tree-sitter]`, which acptui installs). Files the agent
+read or changed in this session are marked with `●`.
+
+`a` mentions the highlighted node in the prompt. A plain file in the workspace is
+attached as above; a section, a class or function, or a file on a mount is read by
+acptui and embedded (when the agent accepts embedded context, else linked), so you can
+hand the agent exactly one function, one section of a long document, or a file it has
+no access to. Mount files are written `@mount:path`, the rest `@path`.
 
 ## Permissions
 
@@ -124,6 +139,10 @@ expand_thoughts = false
 system_prompt = "Prefer small commits."
 system_prompt_mode = "append"
 additional_directories = ["~/src/shared"]
+
+[mounts]                           # more folders in the files panel: any fsspec URL
+docs = "github://phil65:agentpool@main/docs"
+notes = "~/notes"
 
 [agents.my-agent]                  # new agents, or overrides of built-in ones
 name = "My agent"

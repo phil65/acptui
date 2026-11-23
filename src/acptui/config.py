@@ -277,6 +277,10 @@ class Settings(BaseModel):
     additional_directories: list[str] = Field(default_factory=list)
     """More workspace roots for every session (if the agent supports it)."""
 
+    mounts: dict[str, str] = Field(default_factory=dict)
+    """Folders of the files panel besides the workspace: name -> any fsspec / upathtools URL
+    (``github://owner:repo@main/docs``, ``s3://bucket/key``, ``~/notes``, ...)."""
+
     @model_validator(mode="after")
     def _check_agents(self) -> Settings:
         self.all_agents()  # user agents must be valid specs

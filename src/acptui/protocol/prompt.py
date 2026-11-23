@@ -21,6 +21,8 @@ from aclientp.schema.v2 import (
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from aclientp.schema.v2 import ContentBlock
 
 
@@ -118,12 +120,18 @@ def file_block(path: Path, options: PromptOptions) -> ContentBlock:
     return ResourceLink(name=path.name, uri=uri, mime_type="inode/directory")
 
 
-def build_prompt(text: str, cwd: Path, options: PromptOptions) -> list[ContentBlock]:
+def build_prompt(
+    text: str,
+    cwd: Path,
+    options: PromptOptions,
+    resolve: Callable[[str, PromptOptions], ContentBlock | None] | None = None,
+) -> list[ContentBlock]:
     """The content blocks for a prompt.
 
     The text is sent as typed (slash commands are plain text in v2); a leading
     ``/skill`` naming one of the session's skills becomes a ``skill`` block. Each
-    ``@file`` that exists inside ``cwd`` adds a resource block after the text.
+    ``@file`` that exists inside ``cwd`` adds a resource block after the text; other
+    mentions (a section of a file, a file on a mount) go to ``resolve``.
     """
     blocks: list[ContentBlock] = []
     body = text
@@ -134,8 +142,11 @@ def build_prompt(text: str, cwd: Path, options: PromptOptions) -> list[ContentBl
             body = text[match.end() :]
     if body.strip():
         blocks.append(TextContent(text=body))
-    paths = (resolve_mention(cwd, mention) for mention in find_mentions(text))
-    blocks.extend(file_block(path, options) for path in paths if path is not None)
+    for mention in find_mentions(text):
+        if (path := resolve_mention(cwd, mention)) is not None:
+            blocks.append(file_block(path, options))
+        elif resolve is not None and (block := resolve(mention, options)) is not None:
+            blocks.append(block)
     if not blocks:
         blocks.append(TextContent(text=text))
     return blocks

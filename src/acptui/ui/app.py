@@ -188,6 +188,7 @@ class AcpTui(App[None]):
             expand_thoughts=self.settings.expand_thoughts,
             resume_id=self.resume_id,
             setup=self.setup_override or build_setup(self.settings, spec),
+            mounts=self.settings.mounts,
         )
 
     def on_agent_picker_picked(self, message: AgentPicker.Picked) -> None:
