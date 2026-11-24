@@ -238,6 +238,8 @@ class SessionScreen(Screen[None]):
         self.connection_state = "starting"
         """``starting``, ``connected`` or ``disconnected``."""
         self.tab_id = ""
+        self.tab_bar = SessionTabs()
+        """The tab bar (updated by the app, also before the screen is composed)."""
         """The app's name for this tab (its Textual mode)."""
         self._shown = asyncio.Event()
         """Set when the screen is shown again (dialogs of a background tab wait for it)."""
@@ -284,7 +286,7 @@ class SessionScreen(Screen[None]):
         self.prompt.focus()
 
     def compose(self) -> ComposeResult:
-        yield SessionTabs()
+        yield self.tab_bar
         yield FilesPanel(self.files)
         yield ConversationView(
             self.agent_log,
@@ -563,7 +565,7 @@ class SessionScreen(Screen[None]):
 
     def show_tabs(self, tabs: list[TabInfo], *, visible: bool) -> None:
         """Update the tab bar."""
-        self.query_one(SessionTabs).show_tabs(tabs, visible=visible)
+        self.tab_bar.show_tabs(tabs, visible=visible)
 
     def on_screen_resume(self) -> None:
         self._shown.set()
