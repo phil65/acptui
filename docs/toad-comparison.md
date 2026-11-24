@@ -20,7 +20,7 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | — | `acptui connect URL` (Streamable HTTP, WebSocket) | acptui only |
 | `toad serve`, `toad run --serve`, `--host/--port/--public-url` | `acptui serve [--host --port --public-url] COMMAND` | yes |
 | `toad settings` (path of the settings file) | `acptui config` | yes |
-| `toad about` | palette "About" / `/acptui:about` | planned |
+| `toad about` | palette "About acptui" / `/acptui:about` | yes |
 | `toad replay LOG` (replay an agent log as a fake agent) | the bundled demo agent covers testing; the log screen shows traffic | no: little value for users |
 | `--version` | `--version` | yes |
 | — | `acptui options AGENT`, `acptui agents` | acptui only |
@@ -46,7 +46,7 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | Sessions overview (`ctrl+s`, grid with state) | `ctrl+s` list with state and directory | yes |
 | Session state (busy / asking / idle) | `◐` working, `?` waiting, `●` idle, `✘` disconnected, `◌` starting | yes |
 | `ctrl+h` home (launcher while sessions run) | `ctrl+t` (picker; `escape` back) | yes |
-| `/toad:session-new`, `/toad:session-close` | `ctrl+t`, `alt+w`, palette | yes; planned: `/acptui:` commands |
+| `/toad:session-new`, `/toad:session-close` | `ctrl+t`, `alt+w`, `/acptui:tab`, `/acptui:close`, palette | yes |
 | `/toad:rename` | `f2` (`session/set_title`) | yes |
 | Resume (`ctrl+r`) | `ctrl+r`, `--resume` | yes |
 | — | fork, archive, delete, status, close (v2) | acptui only |
@@ -63,9 +63,9 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | Plans (sidebar and inline) | inline plan block | partly |
 | Terminals in tool calls | live terminal view (agent-owned in v2) | yes (terminal work by another session) |
 | Images | drawn (kitty graphics, Sixel, half blocks) | yes: toad shows none |
-| Block cursor (`alt+up/down`), block menu: copy, copy to prompt, open as SVG, maximize | `tab` focuses tool calls | planned |
+| Block cursor (`alt+up/down`), block menu: copy, copy to prompt, open as SVG, maximize | `alt+up/down`, then `c` / `p` / `v` / `m` (keys instead of a menu) | yes |
 | Conversation pruning (keep N lines) | — | planned (setting) |
-| `/toad:clear` | — | planned |
+| `/toad:clear` | `/acptui:clear` | yes |
 | Throbber (thinking animation) | spinner in the status line | yes |
 | Flash messages | Textual toasts | yes |
 | Markdown descriptions (v2) | permission, subagent, commands, options, auth methods, plan entries | acptui only |
@@ -119,7 +119,7 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | Update check (version file on batrachian.ai) | — | no: no network calls by default |
 | Anonymous usage statistics (PostHog) | — | no: no telemetry |
 | Tweet a testimonial (`/toad:testimonial`) | — | no |
-| GitHub gist sharing (`gist.py`) | — | no: unused in toad (not wired up, needs a login) |
+| GitHub gist sharing (`gist.py`) | `/acptui:export` (Markdown file, copied); share it with `gh gist create` | no: unused in toad (not wired up, needs a login) |
 | Process title (`setproctitle`) | — | no |
 | Screenshot (`f12`?) | `f12`: SVG and text | yes |
 

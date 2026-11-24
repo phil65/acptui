@@ -647,6 +647,8 @@ A terminal UI for AI coding agents speaking **ACP v2**.
 | `ctrl+l` | Agent log (stderr and protocol traffic) |
 | `tab` | Focus the conversation; `enter` on a tool call toggles it, `x` cancels it |
 | `pageup` / `pagedown` | Scroll the conversation |
+| `alt+up` / `alt+down` | Block cursor: `c` copy, `p` to prompt, `v` SVG, `m` maximize |
+| `/acptui:export` ... | acptui's own commands: export, clear, rename, new, tab, close, about |
 | `ctrl+t` | New tab: another session (picker; `d` changes the directory) |
 | `alt+left` / `alt+right` | Previous / next tab |
 | `alt+w` | Close the tab (stops its agent) |

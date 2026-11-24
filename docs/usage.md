@@ -61,6 +61,7 @@ the account, background work, mode and model, the context window and the cost.
 | `f2` | Rename the session |
 | `ctrl+d` | Diff view: unified / split / auto |
 | `ctrl+l` | Agent log: stderr, and `t` for the protocol traffic |
+| `alt+up` / `alt+down` | Block cursor: select a block; `c` copy, `p` to the prompt, `v` save as SVG, `m` maximize, `escape` back |
 | `ctrl+t` | New tab: pick an agent (and with `d` a directory) for another session |
 | `alt+left` / `alt+right` | Previous / next tab |
 | `alt+w` | Close the tab (stops its agent) |
@@ -88,6 +89,20 @@ command after its own options) in a new process on the server. There is no
 authentication: anyone who reaches the address can use your agents, so it binds to
 localhost unless you pass `--host` (acptui warns then); put it behind an authenticating
 proxy to share it. Images are drawn with half blocks in the browser.
+
+## acptui's own commands
+
+Commands starting with `/acptui:` are acptui's, not the agent's (completion marks them
+*(acptui)*):
+
+| Command | Does |
+| --- | --- |
+| `/acptui:export` | Save the conversation as Markdown (Downloads) and copy it |
+| `/acptui:clear` | Clear the view (the session keeps its history) |
+| `/acptui:rename TITLE` | Rename the session |
+| `/acptui:new` | New session in this tab |
+| `/acptui:tab`, `/acptui:close` | New tab, close this tab |
+| `/acptui:about` | Versions, paths, terminal, agent (for bug reports) |
 
 ## Tabs
 

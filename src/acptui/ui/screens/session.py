@@ -8,15 +8,18 @@ session, or one of its subagent sessions).
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import os
 from pathlib import Path
+import sys
 from typing import TYPE_CHECKING, ClassVar
 
 from aclientp.exceptions import RequestError
 from aclientp.schema.v2 import (
     AuthMethodAgent,
     AuthMethodTerminal,
+    Command,
     DeclineElicitationResponse,
     FormElicitationRequest,
     SelectSessionConfigOption,
@@ -25,6 +28,7 @@ from aclientp.schema.v2 import (
     UrlElicitationRequest,
 )
 from aclientp.schema.v2.base import is_set
+import platformdirs
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.content import Content
@@ -104,6 +108,45 @@ ACTIVITIES: dict[str, SessionActivity] = {
     "requires_action": "requires_action",
 }
 STDERR_TAIL = 12
+
+CLIENT_COMMANDS: tuple[Command, ...] = tuple(
+    Command(name=f"acptui:{name}", description=f"{description} *(acptui)*")
+    for name, description in (
+        ("export", "Save the conversation as Markdown (and copy it)"),
+        ("clear", "Clear the view; the session keeps its history"),
+        ("rename", "Rename the session: `/acptui:rename TITLE`"),
+        ("new", "Start a new session in this tab"),
+        ("tab", "Open a new tab (agent picker)"),
+        ("close", "Close this tab and stop its agent"),
+        ("about", "Versions, paths, terminal and agent"),
+    )
+)
+"""acptui's own slash commands; the ``acptui:`` prefix keeps them apart from the agent's."""
+
+
+def about(screen: SessionScreen) -> str:
+    """Versions, paths, the terminal and the agent, for bug reports."""
+    from importlib.metadata import version
+
+    from acptui.config import config_path
+    from acptui.ui.widgets.image import image_mode
+
+    connection = screen.connection
+    agent = (
+        f"{connection.agent_name} {connection.agent_version}".strip()
+        if connection is not None
+        else screen.spec.name
+    )
+    terminal = os.environ.get("TERM_PROGRAM") or os.environ.get("TERM") or "unknown"
+    lines = [
+        f"acptui {version('acptui')}, aclientp {version('aclientp')}, textual {version('textual')}",
+        f"Python {sys.version.split()[0]} ({sys.platform})",
+        f"agent: {agent} ({screen.spec.target})",
+        f"config: {config_path()}",
+        f"working directory: {screen.cwd}",
+        f"terminal: {terminal}, images: {image_mode()}",
+    ]
+    return "\n".join(lines)
 
 
 class ErrorPanel(Static):
@@ -193,6 +236,8 @@ class SessionScreen(Screen[None]):
         Binding("f1", "help", "Help"),
         Binding("f2", "rename_session", "Rename", show=False),
         Binding("f5", "restart", "Restart", show=False),
+        Binding("alt+up", "block_cursor(-1)", "Blocks", show=False),
+        Binding("alt+down", "block_cursor(1)", show=False),
         Binding("pageup", "scroll_conversation(-1)", show=False, priority=True),
         Binding("pagedown", "scroll_conversation(1)", show=False, priority=True),
     ]
@@ -414,7 +459,7 @@ class SessionScreen(Screen[None]):
             self.conversation.push(state.set_config_options(options))
         if isinstance(commands, list):
             self.conversation.push(state.set_commands(commands))
-            self.prompt.commands = list(state.commands)
+            self.prompt.commands = [*state.commands, *CLIENT_COMMANDS]
         self.status.refresh_status()
         return state
 
@@ -703,7 +748,7 @@ class SessionScreen(Screen[None]):
         if state is None:
             return
         if message.field == "commands":
-            self.prompt.commands = list(state.commands)
+            self.prompt.commands = [*state.commands, *CLIENT_COMMANDS]
         if message.field == "suggestions":
             self._show_suggestion()
         self.status.refresh_status()
@@ -719,6 +764,11 @@ class SessionScreen(Screen[None]):
     # --- Prompt ---------------------------------------------------------------------
 
     def on_prompt_input_submitted(self, message: PromptInput.Submitted) -> None:
+        if not message.shell and message.text.startswith("/acptui:"):
+            self.prompt.load_text("")
+            name, _, argument = message.text[len("/acptui:") :].partition(" ")
+            self.client_command(name.strip(), argument.strip())
+            return
         if message.shell:
             self.run_worker(self._run_shell(message.text), group="shell", exit_on_error=False)
             return
@@ -746,6 +796,54 @@ class SessionScreen(Screen[None]):
         self.conversation.anchor()
         if isinstance(entry, MessageEntry):
             self.run_worker(self._send_prompt(state, entry), group="rpc", exit_on_error=False)
+
+    def client_command(self, name: str, argument: str = "") -> None:
+        """Run one of acptui's own slash commands (see :data:`CLIENT_COMMANDS`)."""
+        app = self.app
+        match name:
+            case "export":
+                self.action_export()
+            case "clear":
+                self.conversation.clear_view()
+            case "rename" if argument and self.state is not None:
+                if self.connection is not None and self.connection.supports_title:
+                    self.spawn(self._rename(self.state, argument))
+                else:
+                    self.notify("The agent cannot rename sessions", timeout=2)
+            case "rename":
+                self.action_rename_session()
+            case "new":
+                self.action_new_session()
+            case "tab":
+                app.call_later(app.run_action, "new_tab")
+            case "close":
+                app.call_later(app.run_action, "close_tab")
+            case "about":
+                if self.state is not None:
+                    self.conversation.push(
+                        self.state.add_notice("info", "About acptui", about(self))
+                    )
+            case _:
+                self.notify(f"Unknown command /acptui:{name}", severity="warning")
+
+    def action_export(self) -> None:
+        """Save the conversation as Markdown (Downloads) and copy it."""
+        from acptui.protocol.export import session_markdown
+
+        state = self.state
+        if state is None:
+            return
+        text = session_markdown(state, self.spec.name)
+        folder = platformdirs.user_downloads_path()
+        path = folder / f"acptui_{dt.datetime.now():%Y-%m-%d_%H-%M-%S}.md"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            self.notify(f"Couldn't save the conversation: {exc}", severity="error")
+            return
+        self.app.copy_to_clipboard(text)
+        self.notify(f"{path} (copied)", title="Conversation exported", markup=False)
 
     async def _send_prompt(self, state: SessionState, entry: MessageEntry) -> None:
         connection = self._connection()
@@ -1017,6 +1115,22 @@ class SessionScreen(Screen[None]):
         self.status.state = None
         self.conversation.show(None)
         self.start_agent()
+
+    def action_block_cursor(self, step: int) -> None:
+        """Select a conversation block (``c`` copy, ``p`` to prompt, ``v`` SVG, ``m`` max)."""
+        self.conversation.move_block_cursor(step)
+
+    def watch_maximized(self, maximized: Widget | None) -> None:
+        """Back from a maximized block: the block cursor keeps the focus."""
+        if maximized is None and self.is_mounted and self.conversation.block_cursor is not None:
+            self.call_after_refresh(self.conversation.focus)
+
+    def on_conversation_view_to_prompt(self, message: ConversationView.ToPrompt) -> None:
+        self.prompt.insert(message.text)
+        self.prompt.focus()
+
+    def on_conversation_view_left_blocks(self) -> None:
+        self.prompt.focus()
 
     def action_scroll_conversation(self, direction: int) -> None:
         """Scroll the conversation by a page."""

@@ -70,6 +70,8 @@ _content_markdown = content_markdown
 class UserMessageView(Static):
     """A message the user sent."""
 
+    ALLOW_MAXIMIZE = True
+
     DEFAULT_CSS = """
     UserMessageView {
         height: auto;
@@ -177,6 +179,8 @@ def message_segments(blocks: Sequence[ContentBlock]) -> list[Segment]:
 class AgentMessageView(Vertical):
     """A message of the agent: streamed Markdown, with its images drawn in between."""
 
+    ALLOW_MAXIMIZE = True
+
     DEFAULT_CSS = """
     AgentMessageView {
         height: auto;
@@ -249,6 +253,8 @@ class AgentMessageView(Vertical):
 
 class ThoughtView(Collapsible):
     """The agent's reasoning, collapsible."""
+
+    ALLOW_MAXIMIZE = True
 
     DEFAULT_CSS = """
     ThoughtView {
@@ -340,6 +346,8 @@ class ToolCallHeader(Static, can_focus=True):
 
 class ToolCallView(Vertical):
     """A tool call: status, kind, title, locations and content."""
+
+    ALLOW_MAXIMIZE = True
 
     DEFAULT_CSS = """
     ToolCallView {
@@ -498,6 +506,8 @@ class PlanView(Vertical):
     (one line each), a Markdown plan as a document.
     """
 
+    ALLOW_MAXIMIZE = True
+
     DEFAULT_CSS = """
     PlanView {
         height: auto;
@@ -566,6 +576,8 @@ class PlanView(Vertical):
 class NoticeView(Static):
     """A notice: info, warning or error."""
 
+    ALLOW_MAXIMIZE = True
+
     DEFAULT_CSS = """
     NoticeView {
         height: auto;
@@ -589,6 +601,8 @@ class NoticeView(Static):
 class CompactionView(Static):
     """A context compaction."""
 
+    ALLOW_MAXIMIZE = True
+
     DEFAULT_CSS = """
     CompactionView { height: auto; color: $text-muted; padding: 0 1; margin: 0 0 1 0; }
     """
@@ -610,6 +624,8 @@ class CompactionView(Static):
 
 class SessionMessageView(Static):
     """A message sent to or received from another session."""
+
+    ALLOW_MAXIMIZE = True
 
     DEFAULT_CSS = """
     SessionMessageView {
@@ -649,6 +665,8 @@ class SubagentView(Vertical, can_focus=True):
 
     The description comes from the model that launched the subagent: Markdown (ACP v2).
     """
+
+    ALLOW_MAXIMIZE = True
 
     BINDINGS: ClassVar = [
         Binding("enter", "open", "Open subagent", show=False),

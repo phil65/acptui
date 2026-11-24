@@ -81,6 +81,13 @@ def session_commands(screen: SessionScreen) -> Iterator[tuple[str, str, Callable
             partial(app.call_later, app.action_close_tab),
         )
         yield "Sessions", "All tabs and what they are doing (ctrl+s)", app.action_sessions
+    yield "Export conversation", "Save it as Markdown and copy it", screen.action_export
+    yield "Clear the view", "The session keeps its history", screen.conversation.clear_view
+    yield (
+        "About acptui",
+        "Versions, paths, terminal and agent",
+        partial(screen.client_command, "about"),
+    )
     yield "Session options", "Mode, model and other options", screen.action_options
     yield "Cancel turn", "Cancel the running turn", screen.action_cancel_turn
     yield "LLM providers", "Configure the agent's LLM providers", screen.action_providers
