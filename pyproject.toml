@@ -42,6 +42,7 @@ dependencies = [
   "schemez",
   "textual>=8.2.8",
   "textual-image>=0.14.4",
+  "textual-serve>=1.1.2",
   "upathtools[tree-sitter]>=1.25.2",
 ]
 

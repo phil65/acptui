@@ -74,6 +74,21 @@ the account, background work, mode and model, the context window and the cost.
 | `f12` | Screenshot: the screen as SVG and as text (Downloads), text copied to the clipboard |
 | `ctrl+q` | Quit |
 
+## In the browser
+
+```bash
+acptui serve run demo                        # http://localhost:8000
+acptui --cwd ~/src/app serve --port 9000 run claude
+acptui serve --host 0.0.0.0 --public-url https://box.example.com run codex
+```
+
+`acptui serve` runs acptui as a web app ([textual-serve](https://github.com/Textualize/textual-serve)):
+every browser tab starts `acptui OPTIONS COMMAND` (the options before `serve`, the
+command after its own options) in a new process on the server. There is no
+authentication: anyone who reaches the address can use your agents, so it binds to
+localhost unless you pass `--host` (acptui warns then); put it behind an authenticating
+proxy to share it. Images are drawn with half blocks in the browser.
+
 ## Tabs
 
 Each tab is a session with its own agent process: run Claude Code in one tab and Codex

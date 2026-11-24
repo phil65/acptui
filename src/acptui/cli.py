@@ -68,6 +68,22 @@ def _parser() -> argparse.ArgumentParser:
     )
     connect.add_argument("--resume", metavar="SESSION_ID", help="resume this session")
 
+    serve = sub.add_parser(
+        "serve",
+        help="serve acptui in the browser (textual-serve); the rest is the acptui command",
+        description=(
+            "Serve acptui as a web app: every browser tab runs `acptui [OPTIONS] COMMAND` "
+            "in a new process. There is no authentication: anyone who reaches the address "
+            "can use your agents."
+        ),
+    )
+    serve.add_argument("--host", default="localhost", help="address to bind (default: localhost)")
+    serve.add_argument("--port", type=int, default=8000, help="port (default: 8000)")
+    serve.add_argument("--public-url", metavar="URL", help="URL the browser uses, behind a proxy")
+    serve.add_argument(
+        "served", nargs=argparse.REMAINDER, metavar="COMMAND", help="e.g. `run demo`"
+    )
+
     sub.add_parser("agents", help="list known agents and whether they are installed")
     options = sub.add_parser("options", help="print the session options an agent offers")
     options.add_argument("agent", help="agent id or program")
@@ -119,6 +135,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         case "config":
             print(options.config or config_path())
             return
+        case "serve":
+            raise SystemExit(serve_web(options, list(argv if argv is not None else sys.argv[1:])))
         case "options":
             spec = _resolve_run(settings, options.agent, options.args)
             raise SystemExit(print_options(spec, cwd))
@@ -166,6 +184,37 @@ def main(argv: Sequence[str] | None = None) -> None:
             system_prompt_mode=options.system_prompt_mode,
         )
     AcpTui(settings, cwd, spec, resume_id=resume, setup=setup).run()
+
+
+LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def served_command(argv: Sequence[str], served: Sequence[str]) -> list[str]:
+    """The command each browser session runs.
+
+    acptui with the global options given before ``serve`` and the command after it.
+    """
+    index = list(argv).index("serve")
+    return [sys.executable, "-m", "acptui", *argv[:index], *served]
+
+
+def serve_web(options: argparse.Namespace, argv: Sequence[str]) -> int:
+    """Run the web server until ctrl+c."""
+    import shlex
+
+    from textual_serve.server import Server
+
+    command = shlex.join(served_command(argv, options.served))
+    if options.host not in LOCAL_HOSTS:
+        print(
+            f"warning: serving on {options.host}: anyone who can reach it can use your agents",
+            file=sys.stderr,
+        )
+    title = shlex.join(["acptui", *options.served]) if options.served else "acptui"
+    Server(
+        command, host=options.host, port=options.port, title=title, public_url=options.public_url
+    ).serve()
+    return 0
 
 
 def print_options(spec: AgentSpec, cwd: Path) -> int:

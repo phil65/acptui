@@ -63,3 +63,54 @@ def test_registry_agents_take_no_arguments(tmp_path: Path) -> None:
 def test_parse_option() -> None:
     assert parse_option("model=opus") == ("model", "opus")
     assert parse_option("thinking=False") == ("thinking", False)
+
+
+def test_served_command_keeps_the_global_options() -> None:
+    import sys
+
+    from acptui.cli import served_command
+
+    argv = ["--cwd", "/work", "serve", "--port", "9000", "run", "demo"]
+    assert served_command(argv, ["run", "demo"]) == [
+        sys.executable,
+        "-m",
+        "acptui",
+        "--cwd",
+        "/work",
+        "run",
+        "demo",
+    ]
+
+
+def test_serve_answers_in_the_browser(tmp_path: Path) -> None:
+    import socket
+    import subprocess
+    import sys
+    import time
+    import urllib.request
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    command = [sys.executable, "-m", "acptui", "--cwd", str(tmp_path), "serve"]
+    server = subprocess.Popen(
+        [*command, "--port", str(port), "run", "demo"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                with urllib.request.urlopen(f"http://localhost:{port}/", timeout=2) as response:
+                    page = response.read().decode()
+                break
+            except OSError:
+                if time.monotonic() > deadline or server.poll() is not None:
+                    raise
+                time.sleep(0.2)
+        assert "acptui run demo" in page  # the title
+        assert "textual" in page.lower()
+    finally:
+        server.terminate()
+        server.wait(timeout=10)
