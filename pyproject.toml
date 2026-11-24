@@ -31,7 +31,7 @@ classifiers = [
 ]
 dependencies = [
   # Only add below (Copier)
-  "aclientp[websocket]>=0.4.0",  # 0.4: notifications before a response are handled first
+  "aclientp[websocket]>=0.5.1",  # 0.5.1: no error when the agent streams after close
   "anyio>=4.0",
   "markdown-it-py>=3",
   "pillow>=10.3",

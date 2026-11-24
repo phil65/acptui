@@ -125,7 +125,7 @@ command = "docs-mcp"
 
 ## ACP v2 coverage
 
-acptui implements the whole client side of ACP v2 (schema `v2.0.0-beta.3`): every
+acptui implements the whole client side of ACP v2 (schema `v2.0.0-beta.4`): every
 session update kind, all content blocks (text, images, audio, resource links,
 embedded resources, skills), tool calls with diffs and agent-owned terminals,
 permissions, form and URL elicitation, plans, config options (modes, models),
