@@ -490,6 +490,10 @@ class Settings(BaseModel):
     """Keep the conversation and the prompt in a centered column this wide (0: full width;
     40 at least)."""
 
+    max_blocks: int = Field(default=0, ge=0)
+    """Keep at most this many blocks in the view (older ones are removed from the screen,
+    not from the session or the export); 0 keeps all. Long sessions stay responsive."""
+
     footer: bool = True
     """Show the key footer (hide it for one more line)."""
 

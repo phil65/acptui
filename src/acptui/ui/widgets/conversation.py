@@ -91,6 +91,8 @@ class ConversationView(VerticalScroll):
         self.diff_mode: DiffViewMode = diff_mode
         self.expand_thoughts = expand_thoughts
         self.tool_expand: ToolExpand = tool_expand
+        self.max_blocks = 0
+        """Blocks kept on screen (0: all); older ones are removed (after toad's pruning)."""
         self.state: SessionState | None = None
         self._views: dict[Entry, Widget] = {}
         self.block_cursor: Widget | None = None
@@ -108,6 +110,17 @@ class ConversationView(VerticalScroll):
         self._queue.put_nowait(None)
         if state is not None:
             self._queue.put_nowait([EntryAdded(entry) for entry in state.entries])
+
+    async def _prune(self) -> None:
+        if not self.max_blocks or len(self.children) <= self.max_blocks:
+            return
+        old = list(self.children[: len(self.children) - self.max_blocks])
+        if self.block_cursor in old:
+            self._set_cursor(None)
+        gone = set(old)
+        for entry in [entry for entry, view in self._views.items() if view in gone]:
+            del self._views[entry]
+        await self.remove_children(old)
 
     def clear_view(self) -> None:
         """Remove what is shown; later entries appear as usual (the state is kept)."""
@@ -154,6 +167,7 @@ class ConversationView(VerticalScroll):
                 )
                 self._views[entry] = view
                 await self.mount(view)
+                await self._prune()
             case EntryChanged(entry=entry):
                 view = self._views.get(entry)
                 if isinstance(view, AgentMessageView | ThoughtView | ToolCallView):

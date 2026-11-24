@@ -78,3 +78,19 @@ async def test_tool_call_text(demo_spec: AgentSpec, workdir: Path) -> None:
         tool = screen.query(ToolCallView).first()
         assert block_text(tool).startswith(tool.entry.display_title)
         assert "<svg" in block_svg(tool)
+
+
+async def test_old_blocks_are_pruned(demo_spec: AgentSpec, workdir: Path) -> None:
+    app = AcpTui(Settings(max_blocks=3), workdir, demo_spec)
+    async with app.run_test(size=SIZE) as pilot:
+        screen = await connected(pilot, app)
+        for word in ("one", "two", "three"):
+            assert screen.state is not None
+            screen.state.stop_reason = None
+            await send(pilot, f"/echo {word}")
+            await until(pilot, lambda: stop_reason(screen) == "end_turn")
+        await pilot.pause(0.2)
+        assert len(screen.conversation.children) == 3
+        assert screen.state is not None
+        assert len(screen.state.entries) >= 6  # the session keeps everything
+        assert "one" not in "".join(v.source for v in screen.query(AgentMessageView))

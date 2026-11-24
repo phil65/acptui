@@ -237,6 +237,7 @@ tool_expand = "auto"               # auto (by kind), always, never, failed
 auto_copy = false                  # copy text as soon as it is selected
 column_width = 0                   # a centered column this wide (0: full width)
 footer = true                      # the key footer
+max_blocks = 0                     # blocks kept on screen (0: all; the session keeps all)
 diff_wrap = false                  # wrap long lines in unified diffs
 history = true                     # prompt history and recent sessions, across sessions
 tabs = "multiple"                  # tab bar: always, multiple (tabs), never

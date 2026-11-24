@@ -367,6 +367,7 @@ class AcpTui(App[None]):
         )
         screen.tab_id = tab_id
         screen.layout_settings = (self.settings.column_width, self.settings.footer)
+        screen.max_blocks = self.settings.max_blocks
         self.tabs[tab_id] = screen
         self.add_mode(tab_id, lambda: screen)
         if focus:

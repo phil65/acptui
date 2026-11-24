@@ -298,6 +298,8 @@ class SessionScreen(Screen[None]):
         self.tab_id = ""
         self.tab_bar = SessionTabs()
         self.layout_settings: tuple[int, bool] = (0, True)
+        self.max_blocks = 0
+        """Blocks kept in the conversation view (0: all)."""
         """Column width and footer, applied on mount (the app updates them later)."""
         """The tab bar (updated by the app, also before the screen is composed)."""
         """The app's name for this tab (its Textual mode)."""
@@ -391,6 +393,7 @@ class SessionScreen(Screen[None]):
     def on_mount(self) -> None:
         column, footer = self.layout_settings
         self.apply_layout(column, footer=footer)
+        self.conversation.max_blocks = self.max_blocks
         if self.history is not None:
             self.prompt.prompt_history = self.history.texts(shell=False)
             self.prompt.shell_history = self.history.texts(shell=True)
