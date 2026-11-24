@@ -210,6 +210,7 @@ class PtyShell(Shell):
         self._buffer = bytearray()
         self._ready: asyncio.Event | None = None
         self._exit_task: asyncio.Task[None] | None = None
+        self._interrupted = False
 
     @property
     def running(self) -> bool:
@@ -263,6 +264,7 @@ class PtyShell(Shell):
             await self.start()
         entry = ShellCommand(command, self.cwd)
         self.current = entry
+        self._interrupted = False
         self._write(command.rstrip("\n") + "\n")
         return entry
 
@@ -270,6 +272,17 @@ class PtyShell(Shell):
         self._write(text.rstrip("\n") + "\n")
 
     async def interrupt(self) -> None:
+        """Ctrl+C; a second interrupt of the same command ends the shell.
+
+        A command that replaced the shell or its prompt hook (``exec bash``) never
+        reports back; the next command then starts a new shell in the same directory.
+        """
+        if self._interrupted and (command := self.current) is not None:
+            self.close()
+            command.append(b"\r\n[acptui: shell ended, the next command starts a new one]\r\n")
+            self._finish(command, -1)
+            return
+        self._interrupted = True
         self._write(b"\x03")
 
     def _write(self, data: str | bytes) -> None:

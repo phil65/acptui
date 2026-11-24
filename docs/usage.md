@@ -185,9 +185,10 @@ goes back to messages for the agent; `up` / `down` walk the shell history.
 On Linux and macOS one bash or zsh (your `$SHELL` if it is one of them) runs for the
 whole session, so `cd`, `export` and an activated virtualenv carry over between
 commands; while a command runs, `enter` types the line into it (a `read`, a `y/n`
-question) and `ctrl+c` or `esc` interrupts it. On Windows each command runs on its
-own. Pagers are set to `cat`; full-screen programs (editors, `htop`) need a real
-terminal.
+question) and `ctrl+c` or `esc` interrupts it (twice: ends the shell, for a command
+that never returns, like `exec bash`; the next command starts a new one). On Windows
+each command runs on its own. Pagers are set to `cat`; full-screen programs (editors,
+`htop`) need a real terminal.
 
 The agent sees what you ran: commands finished since your last prompt are attached to
 the next one, with their output (long output cut to its start and end). The line above

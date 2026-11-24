@@ -119,6 +119,25 @@ async def test_pty_shell_input_interrupt_and_exit(tmp_path: Path) -> None:
         shell.close()
 
 
+@needs_pty
+async def test_second_interrupt_ends_a_shell_that_stopped_reporting(tmp_path: Path) -> None:
+    assert POSIX_SHELL is not None
+    shell = PtyShell(POSIX_SHELL, tmp_path, None)
+    try:
+        replaced = await shell.run("exec sh")  # no prompt hook any more: never finishes
+        await asyncio.sleep(0.5)
+        await shell.interrupt()
+        await asyncio.sleep(0.5)
+        assert not replaced.done
+        await shell.interrupt()
+        assert replaced.exit_code == -1
+        assert not shell.busy
+        fresh = await finished(shell, "pwd")
+        assert plain_text(bytes(fresh.output)) == str(tmp_path)
+    finally:
+        shell.close()
+
+
 async def test_process_shell_runs_each_command(tmp_path: Path) -> None:
     shell = ProcessShell(tmp_path, None)
     entry = await finished(shell, "echo hello")
