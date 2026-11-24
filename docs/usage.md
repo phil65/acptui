@@ -8,7 +8,7 @@ acptui run claude                # a registry agent (`acptui agents` lists them)
 acptui run demo                  # the bundled demo agent: no LLM, no API key
 acptui run -- my-agent --acp     # any program speaking ACP v2 on stdio
 acptui connect https://host/acp -H "Authorization: Bearer ${TOKEN}"
-acptui connect wss://host/acp
+acptui connect wss://host/acp -H "Authorization: Bearer ${TOKEN}"
 ```
 
 Options go before the command:
@@ -21,6 +21,12 @@ Options go before the command:
 | `--system-prompt TEXT` | Extra system instructions (if the agent supports it) |
 | `--system-prompt-mode append\|override` | Append to or replace the agent's instructions |
 | `--config FILE` | Another config file |
+
+Remote agents usually want a token: `-H "Authorization: Bearer ${TOKEN}"` sends it with
+the request (HTTP) or the WebSocket upgrade. WebSocket servers made with aclientp 0.6+
+(and agentpool's `serve-acp`) check it on the upgrade (`401` without it) and refuse
+browser origins they do not know; `${VAR}` in a header expands from the environment, so
+the token stays out of your shell history.
 
 `acptui run AGENT --resume SESSION_ID` resumes a session and replays its history.
 `acptui options AGENT` prints the config options (with their ids and values) and the

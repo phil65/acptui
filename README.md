@@ -66,7 +66,7 @@ acptui                                   # agent picker (or `default_agent` from
 acptui run claude                        # an agent from the registry
 acptui run -- my-agent --acp             # any command that speaks ACP v2 on stdio
 acptui connect https://host/acp -H "Authorization: Bearer ${TOKEN}"   # Streamable HTTP
-acptui connect wss://host/acp            # WebSocket
+acptui connect wss://host/acp -H "Authorization: Bearer ${TOKEN}"   # WebSocket
 acptui run codex --resume SESSION_ID     # resume a session (with history replay)
 acptui -o model=opus -o mode=plan run claude   # initial session options
 acptui --add-dir ../lib --system-prompt "Be terse." run codex

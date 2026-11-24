@@ -31,7 +31,7 @@ classifiers = [
 ]
 dependencies = [
   # Only add below (Copier)
-  "aclientp[websocket]>=0.5.1",  # 0.5.1: no error when the agent streams after close
+  "aclientp[websocket]>=0.6.0",  # 0.6: WebSocket servers authenticate and check Origin
   "aiohttp>=3.9",
   "anyio>=4.0",
   "frizbee>=0.13.0",

@@ -174,3 +174,49 @@ async def test_unreachable_url(workdir: Path) -> None:
     with pytest.raises(AgentError, match="Could not connect"):
         async with connection.open():
             pass
+
+
+async def test_connect_sends_a_bearer_token_to_a_websocket_agent(workdir: Path) -> None:
+    """Aclientp 0.6 WebSocket servers authenticate the upgrade; ``-H`` carries the token."""
+    import asyncio
+    import socket
+
+    from aclientp import WebSocketTransport
+    from aclientp.server_auth import bearer_token_auth
+    from aclientp.transports import serve
+
+    from acptui.config import url_spec
+    from acptui.demo import DemoAgent
+    from acptui.probe import probe
+
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        port = free.getsockname()[1]
+    transport = WebSocketTransport(
+        host="127.0.0.1", port=port, authenticate=bearer_token_auth("s3cret")
+    )
+    shutdown = asyncio.Event()
+    server = asyncio.create_task(
+        serve(v2_agent=DemoAgent, transport=transport, shutdown_event=shutdown)
+    )
+    url = f"ws://127.0.0.1:{port}"
+    try:
+        async with asyncio.timeout(20):
+            while True:  # until the server listens
+                try:
+                    _, writer = await asyncio.open_connection("127.0.0.1", port)
+                    writer.close()
+                    break
+                except OSError:
+                    await asyncio.sleep(0.05)
+        ok = await probe(url_spec(url, {"Authorization": "Bearer s3cret"}), workdir)
+        assert ok.v2, ok.error
+        missing = await probe(url_spec(url), workdir)
+        assert not missing.v2
+        assert "401" in missing.error
+        wrong = await probe(url_spec(url, {"Authorization": "Bearer nope"}), workdir)
+        assert not wrong.v2
+        assert "401" in wrong.error
+    finally:
+        shutdown.set()
+        await asyncio.wait_for(server, 10)
