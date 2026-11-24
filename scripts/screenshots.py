@@ -122,6 +122,7 @@ def main() -> None:
     """Write the screenshots."""
     os.environ["ACPTUI_DEMO_DELAY"] = "0.001"
     os.environ["ACPTUI_HISTORY"] = os.devnull  # no history written, none shown
+    os.environ["ACPTUI_SESSIONS"] = os.devnull
     OUT.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp())
     project = root / "my-project"

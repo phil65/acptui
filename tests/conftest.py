@@ -30,10 +30,11 @@ FAKE_V2_AGENT = V1_AGENT.replace('"protocolVersion": 1', '"protocolVersion": 2')
 
 @pytest.fixture(autouse=True)
 def _fast_demo(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
-    """No artificial delays in the demo agent; a history file of the test's own."""
+    """No artificial delays in the demo agent; history and recent sessions of its own."""
     monkeypatch.setenv("ACPTUI_DEMO_DELAY", "0")
     history = tmp_path_factory.mktemp("history") / "history.jsonl"
     monkeypatch.setenv("ACPTUI_HISTORY", str(history))
+    monkeypatch.setenv("ACPTUI_SESSIONS", str(history.with_name("sessions.jsonl")))
 
 
 @pytest.fixture

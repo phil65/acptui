@@ -45,6 +45,7 @@ from acptui.protocol.connection import (
 from acptui.protocol.content import content_markdown
 from acptui.protocol.prompt import PromptOptions, build_prompt, shell_block
 from acptui.protocol.state import EntryAdded, EntryChanged, MessageEntry, SessionState, ShellEntry
+from acptui.recent import RecentSession
 from acptui.shell import open_shell
 from acptui.ui.attention import Attention, TitleChanged
 from acptui.ui.markdown import inline_markdown
@@ -93,6 +94,7 @@ if TYPE_CHECKING:
     from acptui.config import AgentSpec, DiffViewMode
     from acptui.history import History
     from acptui.protocol.state import SessionActivity
+    from acptui.recent import RecentSessions
     from acptui.shell import Shell, ShellCommand
     from acptui.ui.agent_log import AgentLog
     from acptui.ui.attention import AttentionKind
@@ -255,8 +257,11 @@ class SessionScreen(Screen[None]):
         setup: SessionSetup | None = None,
         mounts: Mapping[str, str] | None = None,
         history: History | None = None,
+        recent: RecentSessions | None = None,
     ) -> None:
         super().__init__()
+        self.recent = recent
+        """The recent sessions list (for the picker), if kept."""
         self.history = history
         """The prompt history file (``None``: history only for this screen)."""
         self.spec = spec
@@ -446,6 +451,23 @@ class SessionScreen(Screen[None]):
             response.session_id, response.config_options, response.available_commands
         )
 
+    def remember(self, state: SessionState) -> None:
+        """Note the session in the recent sessions list (main sessions only)."""
+        if self.recent is None or state.parent_id is not None:
+            return
+        spec = self.spec
+        self.recent.record(
+            RecentSession(
+                agent_id=spec.id,
+                agent_name=spec.name,
+                command=spec.command,
+                url=spec.url,
+                session_id=state.session_id,
+                cwd=str(self.cwd),
+                title=state.title or "",
+            )
+        )
+
     def _show_session(
         self,
         session_id: str,
@@ -468,6 +490,7 @@ class SessionScreen(Screen[None]):
             self.conversation.push(state.set_commands(commands))
             self.prompt.commands = [*state.commands, *CLIENT_COMMANDS]
         self.status.refresh_status()
+        self.remember(state)
         return state
 
     def _session_error(self, exc: RequestError) -> None:
@@ -577,6 +600,7 @@ class SessionScreen(Screen[None]):
                 self.attention("turn_end", "Turn ended", reason.replace("_", " "))
             if state.title != old_title:
                 self.post_message(TitleChanged())
+                self.remember(state)
         if state is self.state:
             self.conversation.push(changes)
         elif (
@@ -1042,6 +1066,7 @@ class SessionScreen(Screen[None]):
     async def _rename(self, state: SessionState, title: str) -> None:
         state.title = await self._connection().set_title(state.session_id, title)
         self.status.refresh_status()
+        self.remember(state)
 
     def action_options(self) -> None:
         """Show the session options."""

@@ -31,7 +31,8 @@ commands an agent offers, without starting the UI.
 In the picker, `i` shows the highlighted agent's details: what it is, its command,
 whether it speaks ACP v2, and actions to install it and to log in (they run in the
 terminal, acptui steps aside meanwhile). `d` changes the project directory, `c` takes
-a command or URL of an agent that is not listed.
+a command or URL of an agent that is not listed, and `r` lists recent sessions of every
+agent and directory, to resume one in a new tab.
 
 ## The session screen
 
@@ -231,7 +232,7 @@ default_agent = "codex"
 theme = "tokyo-night"              # any Textual theme
 diff_view = "auto"                 # unified, split or auto (split from 120 columns)
 expand_thoughts = false
-history = true                     # keep the prompt history across sessions
+history = true                     # prompt history and recent sessions, across sessions
 tabs = "multiple"                  # tab bar: always, multiple (tabs), never
 images = "auto"                    # auto, tgp (kitty), sixel, halfcell, unicode or off
 system_prompt = "Prefer small commits."

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from aclientp.exceptions import RequestError
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
 
     from acptui.protocol.connection import AgentConnection
     from acptui.protocol.state import CursorState, SessionState
+    from acptui.recent import RecentSession
     from acptui.ui.widgets.tabs import TabInfo
 
 
@@ -499,6 +501,66 @@ class ConfigScreen(ModalScreen[ConfigChoice | None]):
             self._show_options()
         else:
             self.dismiss(None)
+
+
+def time_ago(timestamp: float, now: float | None = None) -> str:
+    """``3 min ago``, ``2 h ago``, ``5 days ago``."""
+    import time
+
+    seconds = max(0.0, (now if now is not None else time.time()) - timestamp)
+    for unit, size in (("days", 86400), ("h", 3600), ("min", 60)):
+        if seconds >= size:
+            return f"{int(seconds // size)} {unit} ago"
+    return "just now"
+
+
+class RecentSessionsScreen(ModalScreen["RecentSession | None"]):
+    """Sessions acptui had open, newest first, of every agent; returns one to resume."""
+
+    DEFAULT_CSS = "RecentSessionsScreen {" + DIALOG_CSS + "}"
+    BINDINGS: ClassVar = [Binding("escape", "dismiss_none", "Close")]
+
+    def __init__(self, sessions: Sequence[RecentSession]) -> None:
+        super().__init__()
+        self.sessions = list(sessions)
+
+    def compose(self) -> ComposeResult:
+        home = str(Path.home())
+        with Vertical(id="dialog"):
+            yield Static("Recent sessions", id="dialog-title")
+            options: list[Option] = []
+            for index, session in enumerate(self.sessions):
+                cwd = (
+                    "~" + session.cwd[len(home) :] if session.cwd.startswith(home) else session.cwd
+                )
+                label = Content.assemble(
+                    (session.title or "(untitled)", "bold"),
+                    ("  " + session.agent_name, "$text-accent"),
+                    ("  " + time_ago(session.time), "$text-muted"),
+                    "\n    ",
+                    (cwd, "$text-muted"),
+                )
+                options.append(Option(label, id=f"r:{index}"))
+            yield OptionList(*options, id="recent")
+            hint = (
+                "enter: resume (in a new tab) · escape: close"
+                if self.sessions
+                else "No sessions yet: they are listed once you had one."
+            )
+            yield Static(hint, id="dialog-hint")
+
+    def on_mount(self) -> None:
+        options = self.query_one(OptionList)
+        options.focus()
+        if self.sessions:
+            options.highlighted = 0
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(self.sessions[int((event.option_id or "r:0")[2:])])
+
+    def action_dismiss_none(self) -> None:
+        """Close."""
+        self.dismiss(None)
 
 
 class TabsScreen(ModalScreen[str | None]):

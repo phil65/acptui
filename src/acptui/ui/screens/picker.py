@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from textual.app import ComposeResult
 
     from acptui.config import AgentSpec
+    from acptui.recent import RecentSession
 
 
 def agent_option(spec: AgentSpec) -> Option:
@@ -70,6 +71,7 @@ class AgentPicker(Screen[None]):
         Binding("c", "custom", "Command / URL"),
         Binding("d", "directory", "Directory"),
         Binding("i", "details", "Details"),
+        Binding("r", "recent", "Recent sessions"),
         Binding("escape", "back", "Back", show=False),
         Binding("q", "app.quit", "Quit"),
     ]
@@ -142,6 +144,24 @@ class AgentPicker(Screen[None]):
             options.focus()
             return
         self.post_message(self.Back())  # the app shows the last tab, if there is one
+
+    class Resume(Message):
+        """Resume a recent session."""
+
+        def __init__(self, session: RecentSession) -> None:
+            super().__init__()
+            self.session = session
+
+    def action_recent(self) -> None:
+        """Pick a recent session (any agent, any directory) to resume."""
+        from acptui.recent import RecentSessions
+        from acptui.ui.screens.dialogs import RecentSessionsScreen
+
+        def chosen(session: RecentSession | None) -> None:
+            if session is not None:
+                self.post_message(self.Resume(session))
+
+        self.app.push_screen(RecentSessionsScreen(RecentSessions().load()), callback=chosen)
 
     class Back(Message):
         """Leave the picker for the last tab."""

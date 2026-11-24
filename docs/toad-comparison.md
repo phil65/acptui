@@ -34,7 +34,7 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | Install actions (run the install command) | `i` then Install / Log in: runs the command in the real terminal (acptui suspended) | yes |
 | "Show in launcher" quick-launch list | `default_agent` | partly |
 | Change the project directory on the launcher | `d` in the picker | yes |
-| Resume a session from the launcher (local session DB, `ctrl+r`) | `ctrl+r` lists the agent's sessions (`session/list`, v2) | yes (per agent); planned: recent sessions across agents |
+| Resume a session from the launcher (local session DB, `ctrl+r`) | `r` in the picker: recent sessions of every agent and directory (`sessions.jsonl`); `ctrl+r` in a session lists the agent's own (`session/list`) | yes |
 | v1 agents | refused with a clear message: v2 only | n/a |
 
 ## Sessions

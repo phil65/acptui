@@ -21,6 +21,7 @@ from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.markup import escape
 
+from acptui.config import command_spec, url_spec
 from acptui.history import History
 from acptui.notify import (
     desktop_notify,
@@ -29,6 +30,7 @@ from acptui.notify import (
     terminal_title,
     use_desktop,
 )
+from acptui.recent import RecentSessions
 from acptui.setup import build_setup
 from acptui.ui.agent_log import AgentLog
 from acptui.ui.attention import SOUNDS, WAITING_MARK, Alert, Attention, TitleChanged
@@ -348,6 +350,7 @@ class AcpTui(App[None]):
             setup=setup or build_setup(self.settings, spec),
             mounts=self.settings.mounts,
             history=History() if self.settings.history else None,
+            recent=RecentSessions() if self.settings.history else None,
         )
         screen.tab_id = tab_id
         self.tabs[tab_id] = screen
@@ -429,6 +432,22 @@ class AcpTui(App[None]):
 
     def on_session_tabs_switch(self, message: SessionTabs.Switch) -> None:
         self.switch_tab(message.tab_id)
+
+    def on_agent_picker_resume(self, message: AgentPicker.Resume) -> None:
+        session = message.session
+        spec = self.settings.find_agent(session.agent_id)
+        if spec is None and session.url is not None:
+            spec = url_spec(session.url)
+        elif spec is None and session.command:
+            spec = command_spec(session.command)
+        if spec is None:
+            self.notify(f"Unknown agent {session.agent_id!r}", severity="error")
+            return
+        cwd = Path(session.cwd)
+        if not cwd.is_dir():
+            self.notify(f"The directory is gone: {cwd}", severity="error")
+            return
+        self.open_tab(spec, cwd, resume_id=session.session_id)
 
     def on_agent_picker_back(self) -> None:
         if self.tabs:
