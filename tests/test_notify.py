@@ -63,7 +63,12 @@ async def test_questions_and_turn_ends_raise_alerts(
     sent: list[tuple[str, ...]] = []
     monkeypatch.setattr(AcpTui, "is_headless", property(lambda _: False))
     monkeypatch.setattr(app_module, "use_desktop", lambda _: True)
-    monkeypatch.setattr(app_module, "desktop_notify", lambda t, m: sent.append(("desktop", t, m)))
+
+    async def fake_desktop(title: str, message: str) -> bool:
+        sent.append(("desktop", title, message))
+        return True
+
+    monkeypatch.setattr(app_module, "notify_desktop", fake_desktop)
     monkeypatch.setattr(app_module, "play_sound", lambda s: sent.append(("sound", s)))
     app = AcpTui(Settings(), workdir, demo_spec)
     async with app.run_test(size=SIZE) as pilot:
@@ -102,3 +107,38 @@ async def test_notifications_can_be_turned_off(demo_spec: AgentSpec, workdir: Pa
         await until(pilot, lambda: bool(app.alerts))
         assert not any(alert.outside for alert in app.alerts)
         assert app._terminal_title == ""
+
+
+async def test_desktop_notifier_is_used_when_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    import desktop_notifier
+
+    shown: list[tuple[str, str]] = []
+
+    class FakeNotifier:
+        def __init__(self, app_name: str, app_icon: object) -> None:
+            assert app_name == "acptui"
+
+        async def send(self, title: str, message: str) -> str:
+            shown.append((title, message))
+            return "id"
+
+    monkeypatch.setattr(desktop_notifier, "DesktopNotifier", FakeNotifier)
+    monkeypatch.setattr(notify, "_native", None)
+    monkeypatch.setattr(notify, "desktop_notify", lambda t, m: pytest.fail("no fallback"))
+    assert await notify.notify_desktop("Agent: done", "end turn")
+    assert shown == [("Agent: done", "end turn")]
+
+
+async def test_a_failing_desktop_notifier_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    import desktop_notifier
+
+    class Broken:
+        def __init__(self, app_name: str, app_icon: object) -> None:
+            raise RuntimeError("no D-Bus session")
+
+    commands: list[tuple[str, str]] = []
+    monkeypatch.setattr(desktop_notifier, "DesktopNotifier", Broken)
+    monkeypatch.setattr(notify, "_native", None)
+    monkeypatch.setattr(notify, "desktop_notify", lambda t, m: commands.append((t, m)) or True)
+    assert await notify.notify_desktop("T", "M")
+    assert commands == [("T", "M")]

@@ -145,8 +145,8 @@ settings screen, history, recent sessions, the fuzzy file search and the export.
   single session looks as before.
 - **Questions from background tabs** wait for their tab (and notify) instead of popping
   up over the tab you are working in.
-- **Notifications**: desktop notifier commands (`notify-send`, `osascript`) instead of a
-  notification library, terminal notifications over SSH; a steady `●` in the title
+- **Notifications**: desktop-notifier (native D-Bus / macOS / WinRT) with the `notify`
+  extra, else `notify-send` / `osascript`, terminal notifications over SSH; a steady `●` in the title
   instead of blinking.
 - **No network calls of its own**: no update check, no statistics; images are never
   fetched from URIs; install commands run only when you pick them, shown first.

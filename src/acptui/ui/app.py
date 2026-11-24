@@ -24,7 +24,7 @@ from textual.markup import escape
 from acptui.config import command_spec, config_path, url_spec
 from acptui.history import History
 from acptui.notify import (
-    desktop_notify,
+    notify_desktop,
     play_sound,
     terminal_notification,
     terminal_title,
@@ -265,15 +265,14 @@ class AcpTui(App[None]):
         desktop = use_desktop(settings.method)
         if not desktop:
             self._write_terminal(terminal_notification(message.title, message.message))
-        title, text = message.title, message.message
-
-        def notify_outside() -> None:
-            if desktop:
-                desktop_notify(title, text)
-            if sound is not None:
-                play_sound(sound)
-
-        self.run_worker(notify_outside, thread=True, group="alerts", exit_on_error=False)
+        else:
+            self.run_worker(
+                notify_desktop(message.title, message.message), group="alerts", exit_on_error=False
+            )
+        if sound is not None:
+            self.run_worker(
+                partial(play_sound, sound), thread=True, group="alerts", exit_on_error=False
+            )
 
     def is_shown(self, screen: Screen[object]) -> bool:
         """Whether ``screen`` is what the user looks at (on top, or under a dialog)."""

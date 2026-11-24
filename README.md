@@ -52,6 +52,7 @@ client; the UI is [Textual](https://textual.textualize.io). In spirit it is clos
 
 ```bash
 uv tool install acptui     # or: pipx install acptui
+uv tool install 'acptui[notify]'   # with native desktop notifications
 acptui                     # pick an agent
 acptui run demo            # the bundled demo agent: no LLM, no API key
 ```

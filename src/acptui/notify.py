@@ -7,12 +7,18 @@ are toad's (see ``NOTICE``), resampled to keep the package small.
 
 from __future__ import annotations
 
+import asyncio
 from importlib.resources import as_file, files
+from importlib.util import find_spec
 import os
 import shutil
 import subprocess
 import sys
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+
+if TYPE_CHECKING:
+    from desktop_notifier import DesktopNotifier
 import unicodedata
 
 
@@ -20,8 +26,9 @@ Sound = Literal["question", "turn-over"]
 """``question``: the agent waits for an answer; ``turn-over``: the agent finished."""
 
 NotifyMethod = Literal["auto", "terminal", "desktop"]
-"""Where notifications go: terminal escape sequences, the desktop's notification service, or
-the desktop when it is reachable (a local session with a notifier), else the terminal."""
+"""Where notifications go: terminal escape sequences, the desktop's notification service
+(desktop-notifier from ``acptui[notify]``, else ``notify-send`` / ``osascript``), or the
+desktop when it is reachable (a local session with a notifier), else the terminal."""
 
 TIMEOUT = 15
 """Seconds a sound player or notifier may take."""
@@ -51,10 +58,20 @@ def play_sound(sound: Sound) -> bool:
         return _run([*player, str(path)])
 
 
+def is_remote() -> bool:
+    """Whether acptui runs over SSH (a desktop notification would pop up over there)."""
+    return bool(os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"))
+
+
+def has_native_notifier() -> bool:
+    """Whether desktop-notifier is installed (``pip install acptui[notify]``)."""
+    return find_spec("desktop_notifier") is not None
+
+
 def desktop_notifier() -> list[str] | None:
     """The command that shows desktop notifications here (``None``: none, or remote)."""
-    if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
-        return None  # a notification would pop up on the remote machine
+    if is_remote():
+        return None
     if sys.platform == "darwin":
         return ["osascript"] if shutil.which("osascript") else None
     if sys.platform.startswith("linux") and shutil.which("notify-send"):
@@ -62,8 +79,38 @@ def desktop_notifier() -> list[str] | None:
     return None
 
 
+_native: DesktopNotifier | None = None
+
+
+async def native_notify(title: str, message: str) -> bool:
+    """Show a notification with desktop-notifier (D-Bus, macOS notification center, WinRT).
+
+    Whether it was sent; ``False`` when the extra is not installed or the backend fails
+    (the caller falls back to :func:`desktop_notify`).
+    """
+    global _native
+    try:
+        from desktop_notifier import DesktopNotifier
+    except ImportError:
+        return False
+    try:
+        if _native is None:
+            _native = DesktopNotifier(app_name="acptui", app_icon=None)
+        await _native.send(title=title, message=message)
+    except Exception:  # noqa: BLE001 - any backend failure: use the fallback
+        return False
+    return True
+
+
+async def notify_desktop(title: str, message: str) -> bool:
+    """A desktop notification: desktop-notifier if installed, else the notifier command."""
+    if await native_notify(title, message):
+        return True
+    return await asyncio.to_thread(desktop_notify, title, message)
+
+
 def desktop_notify(title: str, message: str) -> bool:
-    """Show a desktop notification (call it from a thread). Whether it was shown."""
+    """Show a desktop notification with a command; whether it was shown (blocks)."""
     notifier = desktop_notifier()
     if notifier is None:
         return False
@@ -81,7 +128,7 @@ def use_desktop(method: NotifyMethod) -> bool:
         case "terminal":
             return False
         case _:
-            return desktop_notifier() is not None
+            return not is_remote() and (has_native_notifier() or desktop_notifier() is not None)
 
 
 def terminal_notification(title: str, message: str) -> str:

@@ -123,7 +123,9 @@ waits until you switch to it (the tab shows `?`, and you get a notification).
 When the agent asks for permission or input, the terminal bell rings. If you are not
 looking (the terminal is not focused, or the session is in another tab), acptui also
 sends a notification and plays a sound, for questions and when a turn ends: desktop
-notifications (`notify-send`, `osascript`) on a local machine, terminal notifications
+notifications on a local machine (native with `uv tool install 'acptui[notify]'`:
+[desktop-notifier](https://github.com/samschott/desktop-notifier) talks to D-Bus, the
+macOS notification center and Windows directly; without it `notify-send` / `osascript`), terminal notifications
 (OSC 777 / 9 / 99: foot, WezTerm, Ghostty, kitty, iTerm2, Windows Terminal, ...) over
 SSH or with `method = "terminal"`. The terminal title shows the session and starts with
 `●` while an agent waits for you. See `[notifications]` in the configuration.
