@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
 import re
+import time
 from typing import TYPE_CHECKING, Literal
 
 from aclientp.schema.v2 import Command, Skill, TextCommandInput
@@ -13,7 +15,6 @@ from aclientp.schema.v2.base import is_set
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from aclientp.schema.v2 import AvailableCommand
 
@@ -104,8 +105,93 @@ def _escape(path: str) -> str:
     return path.replace(" ", "\\ ")
 
 
+MAX_INDEXED_FILES = 20_000
+"""The fuzzy file search looks at no more files than this."""
+
+INDEX_TTL = 10.0
+"""Seconds a file index is reused before the workspace is walked again."""
+
+_indexes: dict[Path, tuple[float, list[str]]] = {}
+
+
+def file_index(cwd: Path) -> list[str]:
+    """Workspace-relative paths of the files under ``cwd``, cached for a while.
+
+    Ignored and hidden folders are left out; the index lives :data:`INDEX_TTL` seconds.
+    """
+    root = cwd.resolve()
+    cached = _indexes.get(root)
+    now = time.monotonic()
+    if cached is not None and now - cached[0] < INDEX_TTL:
+        return cached[1]
+    paths: list[str] = []
+    for directory, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in IGNORED_DIRS and not d.startswith("."))
+        base = Path(directory).relative_to(root)
+        paths.extend((base / name).as_posix() for name in sorted(files))
+        if len(paths) >= MAX_INDEXED_FILES:
+            break
+    _indexes[root] = (now, paths[:MAX_INDEXED_FILES])
+    return _indexes[root][1]
+
+
+def fuzzy_score(query: str, path: str) -> float | None:
+    """How well ``query`` matches ``path`` as a subsequence (``None``: not at all).
+
+    Matches in the file name, at word starts and in runs score higher; long paths a bit
+    lower.
+    """
+    lowered = path.lower()
+    name_start = lowered.rfind("/") + 1
+    score = 0.0
+    position = 0
+    previous = -2
+    for char in query.lower():
+        index = lowered.find(char, position)
+        if index < 0:
+            return None
+        score += 1.0
+        if index == previous + 1:
+            score += 2.0  # a run
+        if index == 0 or lowered[index - 1] in "/_-. ":
+            score += 1.5  # a word start
+        if index >= name_start:
+            score += 1.0  # in the file name
+        previous = index
+        position = index + 1
+    return score - len(path) / 100
+
+
+def fuzzy_paths(query: str, cwd: Path, limit: int = MAX_PATH_COMPLETIONS) -> list[str]:
+    """The workspace files that match ``query`` best (fuzzy, after toad's file picker)."""
+    scored = [
+        (score, path) for path in file_index(cwd) if (score := fuzzy_score(query, path)) is not None
+    ]
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [path for _, path in scored[:limit]]
+
+
 def complete_path(token: str, cwd: Path, limit: int = MAX_PATH_COMPLETIONS) -> list[Completion]:
-    """Files and directories inside ``cwd`` matching a partial path."""
+    """Files and directories inside ``cwd`` matching a partial path.
+
+    Entries of the typed directory come first; a name of two characters or more (no
+    ``/`` in it) also finds files anywhere in the workspace by fuzzy search.
+    """
+    direct = _complete_directory(token, cwd, limit)
+    raw = token.replace("\\ ", " ")
+    if len(raw) < 2 or "/" in raw:  # noqa: PLR2004
+        return direct
+    seen = {completion.insert for completion in direct}
+    fuzzy = [
+        Completion(path, _escape(path), "fuzzy match")
+        for path in fuzzy_paths(raw, cwd, limit)
+        if _escape(path) not in seen
+    ]
+    return (direct + fuzzy)[:limit]
+
+
+def _complete_directory(token: str, cwd: Path, limit: int) -> list[Completion]:
+    """Entries of the directory in ``token`` whose name matches its last part."""
     raw = token.replace("\\ ", " ")
     directory, _, name = raw.rpartition("/")
     base = (cwd / directory).resolve() if directory else cwd.resolve()

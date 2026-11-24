@@ -61,3 +61,26 @@ def test_complete_path(workdir: Path) -> None:
 def test_first_line() -> None:
     assert first_line("\n  Summary.\n\nMore.") == "Summary."
     assert first_line("") == ""
+
+
+def test_fuzzy_path_search_finds_files_anywhere(workdir: Path) -> None:
+    from acptui.completion import _indexes, file_index, fuzzy_score
+
+    (workdir / "src" / "deep").mkdir()
+    (workdir / "src" / "deep" / "conversation_view.py").write_text("", encoding="utf-8")
+    (workdir / ".git").mkdir()
+    (workdir / ".git" / "config").write_text("", encoding="utf-8")
+    _indexes.clear()
+    assert "src/deep/conversation_view.py" in file_index(workdir)
+    assert not any(path.startswith(".git") for path in file_index(workdir))
+
+    found = complete_path("convview", workdir)
+    assert found[0].insert == "src/deep/conversation_view.py"
+    assert found[0].detail == "fuzzy match"
+    assert complete_path("src/", workdir)[0].label == "src/deep/"  # a directory: no fuzzy
+    assert fuzzy_score("xyz", "src/main.py") is None
+    name = fuzzy_score("main", "src/main.py")
+    folder = fuzzy_score("main", "main_stuff/other/thing.py")
+    assert name is not None
+    assert folder is not None
+    assert name > folder

@@ -143,7 +143,9 @@ the agent sends, an image URI is shown but never fetched.
 `@path` mentions (inside the working directory) are attached to the prompt: small
 text files are embedded when the agent accepts embedded context, images and audio are
 attached when it accepts them, anything else is sent as a resource link. Escape spaces
-in paths with a backslash (`@my\ file.txt`); the completion does that for you.
+in paths with a backslash (`@my\ file.txt`); the completion does that for you. After
+the entries of the directory you are in, the completion lists fuzzy matches from the
+whole workspace: `@convview` finds `src/ui/conversation_view.py`.
 
 ## Shell mode
 

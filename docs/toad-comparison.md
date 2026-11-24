@@ -75,9 +75,9 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | toad | acptui | Status |
 | --- | --- | --- |
 | Multi-line editor, `enter` sends | yes | yes |
-| Markdown syntax highlighting in the prompt | — | planned |
+| Markdown syntax highlighting in the prompt | — | no (for now): needs overriding `TextArea` internals in the prompt widget, which shell mode is changing; Textual's tree-sitter Markdown highlights next to nothing |
 | `/` command completion with descriptions | yes (descriptions as Markdown) | yes |
-| `@` file mention with fuzzy search over the project, `tab` for a tree | `@` path completion per directory; files panel (`ctrl+b`) | partly: planned (fuzzy search) |
+| `@` file mention with fuzzy search over the project, `tab` for a tree | `@name` completes the directory's entries, then fuzzy matches from the whole workspace; files panel (`ctrl+b`, `a` mentions) as the tree | yes |
 | History (persistent file) | persistent (`history.jsonl` in the state directory), prompts and shell commands apart | yes |
 | Mode switcher (`ctrl+o`) | `ctrl+o` options, `shift+tab` next mode | yes |
 | Shell mode (`!`, PTY shell, completion, danger warnings) | shell mode (`!` / `$`) | yes (by another session); danger warnings deferred: terminal work in progress elsewhere |
