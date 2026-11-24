@@ -30,7 +30,12 @@ def agent_option(spec: AgentSpec) -> Option:
         if available
         else Content("not found").stylize("$text-error")
     )
-    first = Content.assemble((spec.name, "bold"), "  ", status)
+    v2 = {
+        True: Content(" ACP v2").stylize("$text-success"),
+        False: Content(" no ACP v2 yet").stylize("$text-warning"),
+        None: Content(" ACP v2?").stylize("$text-muted"),
+    }[spec.acp_v2]
+    first = Content.assemble((spec.name, "bold"), "  ", status, " ·", v2)
     detail = spec.description or spec.target
     second = Content.assemble(
         ("  " + spec.target, "$text-muted"),
@@ -64,6 +69,7 @@ class AgentPicker(Screen[None]):
     BINDINGS: ClassVar = [
         Binding("c", "custom", "Command / URL"),
         Binding("d", "directory", "Directory"),
+        Binding("i", "details", "Details"),
         Binding("escape", "back", "Back", show=False),
         Binding("q", "app.quit", "Quit"),
     ]
@@ -139,6 +145,35 @@ class AgentPicker(Screen[None]):
 
     class Back(Message):
         """Leave the picker for the last tab."""
+
+    def action_details(self) -> None:
+        """Details of the highlighted agent: what it is, how to install and log in."""
+        from acptui.ui.screens.agent import AgentDetailsScreen
+
+        options = self.query_one("#agents", OptionList)
+        index = options.highlighted
+        if index is None:
+            return
+        option_id = options.get_option_at_index(index).id
+        spec = next((s for s in self.agents if s.id == option_id), None)
+        if spec is None:
+            return
+
+        def chosen(action: str | None) -> None:
+            if action == "start":
+                self.post_message(self.Picked(spec, self.cwd))
+            elif action == "installed":
+                self.refresh_agents()
+
+        self.app.push_screen(AgentDetailsScreen(spec), callback=chosen)
+
+    def refresh_agents(self) -> None:
+        """Re-check which agents are installed."""
+        options = self.query_one("#agents", OptionList)
+        highlighted = options.highlighted
+        options.clear_options()
+        options.add_options(agent_option(spec) for spec in self.agents)
+        options.highlighted = highlighted
 
     def action_directory(self) -> None:
         """Change the project directory of the next session."""

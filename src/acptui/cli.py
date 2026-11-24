@@ -109,10 +109,15 @@ def _headers(values: Sequence[str]) -> dict[str, str]:
     return headers
 
 
+V2_LABELS = {True: "v2", False: "not v2", None: "v2?"}
+
+
 def _list_agents(settings: Settings) -> None:
+    width = max(len(spec.name) for spec in settings.all_agents())
     for spec in settings.all_agents():
         installed = "installed" if spec.available else "not found"
-        print(f"{spec.id:<12} {spec.name:<14} {installed:<10} {spec.target}")
+        v2 = V2_LABELS[spec.acp_v2]
+        print(f"{spec.id:<12} {spec.name:<{width}} {installed:<10} {v2:<7} {spec.target}")
 
 
 def main(argv: Sequence[str] | None = None) -> None:

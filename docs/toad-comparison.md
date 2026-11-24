@@ -29,9 +29,9 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 
 | toad | acptui | Status |
 | --- | --- | --- |
-| Agent store: grid of ~20 agents with descriptions (TOML per agent) | Agent picker over the built-in registry and user agents (`config.toml`) | partly: planned (details, more agents) |
-| Agent details (Markdown help, homepage) | — | planned |
-| Install actions (run the install command) | install command shown in the picker | planned |
+| Agent store: grid of ~20 agents with descriptions (TOML per agent) | Agent picker over the built-in registry (toad's agents included, with ACP v2 support: yes / not yet / unknown) and user agents (`config.toml`) | yes (a list, not a grid) |
+| Agent details (Markdown help, homepage) | `i` in the picker: description, command, v2 support, homepage, install and login commands | yes (short descriptions instead of toad's long help texts) |
+| Install actions (run the install command) | `i` then Install / Log in: runs the command in the real terminal (acptui suspended) | yes |
 | "Show in launcher" quick-launch list | `default_agent` | partly |
 | Change the project directory on the launcher | `d` in the picker | yes |
 | Resume a session from the launcher (local session DB, `ctrl+r`) | `ctrl+r` lists the agent's sessions (`session/list`, v2) | yes (per agent); planned: recent sessions across agents |

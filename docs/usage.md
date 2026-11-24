@@ -28,6 +28,11 @@ commands an agent offers, without starting the UI.
 
 ![The agent picker](images/picker.svg)
 
+In the picker, `i` shows the highlighted agent's details: what it is, its command,
+whether it speaks ACP v2, and actions to install it and to log in (they run in the
+terminal, acptui steps aside meanwhile). `d` changes the project directory, `c` takes
+a command or URL of an agent that is not listed.
+
 ## The session screen
 
 ![A turn of the demo agent](images/session.svg)

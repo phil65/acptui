@@ -15,6 +15,8 @@ licensed under the GNU Affero General Public License v3.0:
   controlling terminal, the working directory reported by an escape sequence; after
   toad's src/toad/shell.py), and switching the prompt to shell mode with `!` / `$`
   (after toad's src/toad/widgets/prompt.py)
+- src/acptui/config.py: the agent list `_TOAD_AGENTS` (names, commands, homepages and
+  install / login commands from toad's src/toad/data/agents/*.toml)
 - src/acptui/data/sounds/question.wav, turn-over.wav: toad's notification sounds
   (src/toad/data/sounds/), resampled to 22 kHz mono and shortened
 

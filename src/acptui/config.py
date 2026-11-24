@@ -84,6 +84,12 @@ class AgentSpec(BaseModel):
     builtin: bool = False
     """Whether the agent comes from the built-in registry."""
 
+    acp_v2: bool | None = None
+    """Whether the agent speaks ACP v2: known yes, known not yet, or ``None`` (unknown)."""
+
+    login: str = ""
+    """Command that logs in to the agent's service (if it has one)."""
+
     options: Mapping[str, str | bool] = Field(default_factory=dict)
     """Initial session config options (``config_id`` -> value), e.g. ``{"model": "opus"}``."""
 
@@ -121,9 +127,168 @@ class AgentSpec(BaseModel):
         return {key: expand_env(value) for key, value in self.headers.items()}
 
 
+_TOAD_AGENTS: tuple[tuple[str, str, tuple[str, ...], str, str, str, str], ...] = (
+    # id, name, command, description, homepage, install, login. Adapted from toad's agent
+    # registry (src/toad/data/agents/*.toml, Copyright (c) Will McGugan, AGPL-3.0).
+    (
+        "amp",
+        "Amp",
+        ("npx", "-y", "amp-acp"),
+        "Sourcegraph's Amp CLI via the amp-acp adapter",
+        "https://ampcode.com",
+        "curl -fsSL https://ampcode.com/install.sh | bash && npm install -g amp-acp",
+        "amp login",
+    ),
+    (
+        "auggie",
+        "Auggie",
+        ("auggie", "--acp"),
+        "Augment Code's agent in the terminal",
+        "https://www.augmentcode.com/product/CLI",
+        "npm install -g @augmentcode/auggie",
+        "auggie login",
+    ),
+    (
+        "copilot",
+        "Copilot CLI",
+        ("copilot", "--acp"),
+        "GitHub Copilot in the terminal",
+        "https://github.com/github/copilot-cli",
+        "npm install -g @github/copilot@prerelease",
+        "",
+    ),
+    (
+        "crow-cli",
+        "crow-cli",
+        ("crow-cli", "acp"),
+        "A minimal ACP-native coding agent",
+        "https://crow-ai.dev",
+        "uv tool install crow-cli",
+        "",
+    ),
+    (
+        "cursor",
+        "Cursor CLI",
+        ("agent", "acp"),
+        "Cursor's coding agent in the terminal",
+        "https://cursor.com/docs/cli/acp",
+        "curl https://cursor.com/install -fsS | bash",
+        "agent login",
+    ),
+    (
+        "deepagents",
+        "Deep Agents",
+        ("deepagents-code", "--acp"),
+        "LangChain's open-source coding agent built on LangGraph",
+        "https://github.com/langchain-ai/deepagents",
+        "curl -LsSf https://langch.in/dcode | bash",
+        "",
+    ),
+    (
+        "cagent",
+        "Docker cagent",
+        ("cagent", "acp"),
+        "Docker's agent builder and runtime (comes with Docker Desktop 4.49+)",
+        "https://docs.docker.com/ai/cagent/",
+        "",
+        "",
+    ),
+    (
+        "goose",
+        "Goose",
+        ("goose", "acp"),
+        "Block's open-source, extensible agent",
+        "https://block.github.io/goose/",
+        "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash",
+        "",
+    ),
+    (
+        "grok",
+        "Grok Build",
+        ("grok", "agent", "stdio"),
+        "xAI's coding agent for the terminal",
+        "https://x.ai/news/grok-build-cli",
+        "curl -fsSL https://x.ai/cli/install.sh | bash",
+        "grok login",
+    ),
+    (
+        "hf",
+        "Hugging Face Inference",
+        ("hf-inference-acp", "-x"),
+        "Open-weight models and skills through Hugging Face Inference Providers",
+        "https://huggingface.co",
+        "uv tool install -U hf-inference-acp --with-executables-from huggingface_hub",
+        "",
+    ),
+    (
+        "kimi",
+        "Kimi CLI",
+        ("kimi", "acp"),
+        "Moonshot AI's coding agent",
+        "https://www.kimi.com/",
+        "uv tool install kimi-cli",
+        "",
+    ),
+    (
+        "kiro",
+        "Kiro CLI",
+        ("kiro-cli", "acp"),
+        "AWS Kiro's agent in the terminal",
+        "https://kiro.dev/cli/",
+        "curl -fsSL https://cli.kiro.dev/install | bash",
+        "",
+    ),
+    (
+        "openclaw",
+        "OpenClaw",
+        ("openclaw", "acp"),
+        "An experimental personal agent",
+        "https://openclaw.ai/",
+        "curl -fsSL https://openclaw.ai/install.sh | bash",
+        "",
+    ),
+    (
+        "openhands",
+        "OpenHands",
+        ("openhands", "acp"),
+        "The open platform for coding agents",
+        "https://openhands.dev/",
+        "uv tool install openhands -U --python 3.12",
+        "openhands login",
+    ),
+    (
+        "stakpak",
+        "Stakpak",
+        ("stakpak", "acp"),
+        "A DevOps agent in Rust",
+        "https://stakpak.dev/",
+        "cargo install stakpak",
+        "",
+    ),
+    (
+        "vibe",
+        "Mistral Vibe",
+        ("vibe-acp",),
+        "Mistral's open-source coding agent",
+        "https://mistral.ai/news/devstral-2-vibe-cli",
+        "curl -LsSf https://mistral.ai/vibe/install.sh | bash",
+        "",
+    ),
+    (
+        "vtcode",
+        "VT Code",
+        ("vtcode", "acp"),
+        "A Rust coding agent with Tree-sitter and ast-grep code intelligence",
+        "https://github.com/vinhnx/vtcode",
+        "cargo install --git https://github.com/vinhnx/vtcode",
+        "",
+    ),
+)
+
 BUILTIN_AGENTS: tuple[AgentSpec, ...] = (
     AgentSpec(
         id="claude",
+        acp_v2=True,
         name="Claude Code",
         command=("claude-agent-acp",),
         description="Anthropic's Claude Code via the claude-agent-acp adapter",
@@ -133,6 +298,7 @@ BUILTIN_AGENTS: tuple[AgentSpec, ...] = (
     ),
     AgentSpec(
         id="codex",
+        acp_v2=True,
         name="Codex",
         command=("codex-acp",),
         description="OpenAI Codex via the codex-acp adapter",
@@ -142,6 +308,7 @@ BUILTIN_AGENTS: tuple[AgentSpec, ...] = (
     ),
     AgentSpec(
         id="gemini",
+        acp_v2=False,
         name="Gemini CLI",
         command=("gemini", "--experimental-acp"),
         description="Google's Gemini CLI in ACP mode",
@@ -151,6 +318,7 @@ BUILTIN_AGENTS: tuple[AgentSpec, ...] = (
     ),
     AgentSpec(
         id="opencode",
+        acp_v2=False,
         name="OpenCode",
         command=("opencode", "acp"),
         description="SST's OpenCode in ACP mode",
@@ -160,6 +328,7 @@ BUILTIN_AGENTS: tuple[AgentSpec, ...] = (
     ),
     AgentSpec(
         id="agentpool",
+        acp_v2=True,
         name="AgentPool",
         command=("agentpool", "serve-acp"),
         description="agentpool's configurable agents served over ACP",
@@ -169,14 +338,29 @@ BUILTIN_AGENTS: tuple[AgentSpec, ...] = (
     ),
     AgentSpec(
         id="demo",
+        acp_v2=True,
         name="Demo agent",
         command=(sys.executable, "-m", "acptui.demo"),
         description="Scripted v2 agent bundled with acptui (no LLM, no API key)",
         homepage="https://github.com/phil65/acptui",
         builtin=True,
     ),
+    *(
+        AgentSpec(
+            id=agent_id,
+            name=name,
+            command=command,
+            description=description,
+            homepage=homepage,
+            install=install,
+            login=login,
+            builtin=True,
+        )
+        for agent_id, name, command, description, homepage, install, login in _TOAD_AGENTS
+    ),
 )
-"""Agents acptui knows out of the box."""
+"""Agents acptui knows out of the box: the ones known to speak v2 first, then toad's list
+(whether those speak v2 yet is unknown; acptui says so when they answer)."""
 
 
 class UserAgent(BaseModel):

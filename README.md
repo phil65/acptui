@@ -96,6 +96,11 @@ ACP v2 is a draft; agents get v2 support one by one. acptui negotiates the versi
 | `agentpool` | AgentPool | `agentpool serve-acp` | yes (2.11+) |
 | `demo` | Demo agent | `python -m acptui.demo` | yes |
 
+The registry also has the agents from toad's list (Amp, Auggie, Copilot CLI, Cursor,
+Goose, Kimi, Kiro, OpenHands, Mistral Vibe and more), whose v2 support is unknown yet:
+`acptui agents` lists them all, and `i` in the picker shows an agent's details with
+actions to install it and log in.
+
 Add your own agents (or override these) in `config.toml` in the platform config
 directory (`acptui config` prints the path):
 
