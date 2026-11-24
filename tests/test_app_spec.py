@@ -173,7 +173,7 @@ async def test_media_plans_notices_compaction_suggestions(
         await pilot.pause(0.1)
         assert '"prompt": "a dot"' in "".join(str(w.render()) for w in tool.query(".tool-text"))
 
-        plans = list(screen.query(PlanView))
+        plans = list(screen.conversation.query(PlanView))
         assert str(plans[0].border_subtitle).endswith("PLAN.md")
         assert plans[1].has_class("-removed")
         assert [n.entry.severity for n in screen.query(NoticeView)] == ["info", "warning", "error"]

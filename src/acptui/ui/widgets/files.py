@@ -1,4 +1,4 @@
-"""The files panel: the working directory and the mounts as a tree (see ``acptui.files``).
+"""The files tree of the sidebar: the working directory and the mounts (see ``acptui.files``).
 
 Files open like folders where upathtools can look inside (archives, Markdown by
 section, source files by class / function). ``a`` mentions the highlighted node in
@@ -11,9 +11,8 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from rich.text import Text
 from textual.binding import Binding
-from textual.containers import Vertical
 from textual.message import Message
-from textual.widgets import DirectoryTree, Label
+from textual.widgets import DirectoryTree
 from upath import UPath
 
 from acptui.files import WORKSPACE, opens_like_folder
@@ -24,7 +23,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from rich.style import Style
-    from textual.app import ComposeResult
     from textual.widgets._directory_tree import DirEntry
     from textual.widgets.tree import TreeNode
 
@@ -103,41 +101,3 @@ class FileTree(DirectoryTree):
         if path.path.strip("/") == WORKSPACE:
             return  # the folder itself: nothing to mention
         self.post_message(self.Mention(self.files.mention(path)))
-
-
-class FilesPanel(Vertical):
-    """The tree with a heading, docked at the side of the session screen."""
-
-    DEFAULT_CSS = """
-    FilesPanel {
-        dock: left;
-        width: 36;
-        height: 1fr;
-        border-right: tall $panel;
-        display: none;
-    }
-    FilesPanel.-open { display: block; }
-    FilesPanel > Label { text-style: bold; padding: 0 1; color: $text-muted; }
-    FilesPanel > FileTree { height: 1fr; }
-    """
-
-    def __init__(self, files: Files) -> None:
-        super().__init__(id="files-panel")
-        self.files = files
-
-    def compose(self) -> ComposeResult:
-        yield Label("Files  (a: mention, ctrl+b: hide)")
-        yield FileTree(self.files)
-
-    @property
-    def file_tree(self) -> FileTree:
-        return self.query_one(FileTree)
-
-    @property
-    def open(self) -> bool:
-        return self.has_class("-open")
-
-    def toggle(self) -> None:
-        self.toggle_class("-open")
-        if self.open:
-            self.file_tree.focus()

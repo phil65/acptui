@@ -63,10 +63,20 @@ async def session_shots(project: Path) -> None:
         await pilot.press("1")
         await wait(pilot, done)
         await pilot.pause(1)
-        plan = screen.query_one(PlanView)
+        plan = screen.conversation.query_one(PlanView)
         screen.conversation.scroll_to_widget(plan, animate=False, top=True)
         await pilot.pause(0.3)
         app.save_screenshot("session.svg", str(OUT))
+
+        await pilot.press("ctrl+b")  # the sidebar: plan and files; the plan inline in one line
+        tree = screen.sidebar.file_tree
+        await wait(pilot, lambda: bool(tree.root.children))
+        tree.root.children[0].expand()
+        await wait(pilot, lambda: bool(tree.root.children[0].children))
+        screen.conversation.scroll_to_widget(plan, animate=False, top=True)
+        await pilot.pause(0.5)
+        app.save_screenshot("sidebar.svg", str(OUT))
+        await pilot.press("ctrl+b")
 
         await send("/subagent")
         await wait(pilot, done)
@@ -123,6 +133,15 @@ async def picker_shot(project: Path) -> None:
         app.save_screenshot("picker.svg", str(OUT))
 
 
+async def launcher_shot(project: Path) -> None:
+    """The agent picker with pinned agents (number keys start them)."""
+    settings = Settings(theme="tokyo-night", pinned_agents=["claude", "codex", "agentpool"])
+    app = AcpTui(settings, project)
+    async with app.run_test(size=SIZE) as pilot:
+        await pilot.pause(0.5)
+        app.save_screenshot("launcher.svg", str(OUT))
+
+
 def main() -> None:
     """Write the screenshots."""
     os.environ["ACPTUI_DEMO_DELAY"] = "0.001"
@@ -137,6 +156,7 @@ def main() -> None:
     try:
         asyncio.run(session_shots(project))
         asyncio.run(picker_shot(project))
+        asyncio.run(launcher_shot(project))
     finally:
         shutil.rmtree(root)
 

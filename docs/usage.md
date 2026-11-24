@@ -42,6 +42,16 @@ remembers the result. acptui never starts an agent on its own to find out. `d` c
 a command or URL of an agent that is not listed, and `r` lists recent sessions of every
 agent and directory, to resume one in a new tab.
 
+### Pinned agents
+
+![Pinned agents on top of the picker](images/launcher.svg)
+
+`p` pins the highlighted agent (or unpins it); so does `p` in its details. Pinned agents
+come first, numbered in the order you pinned them, and `1` to `9` start one right away:
+the picker becomes a quick launcher for the agents you use. The list is saved as
+`pinned_agents` in `config.toml` (its comments and the rest of the file are kept).
+`default_agent` skips the picker altogether.
+
 ## The session screen
 
 ![A turn of the demo agent](images/session.svg)
@@ -84,7 +94,7 @@ the account, background work, mode and model, the context window and the cost.
 | `f5` | Restart the agent |
 | `f1` | Help |
 | `f3` | Settings: change them in the app (saved to `config.toml`, comments kept) |
-| `ctrl+b` | Files panel: the workspace and mounts as a tree (see Files) |
+| `ctrl+b` | Sidebar: the plan and the files (see Sidebar) |
 | `!` / `$` | On an empty prompt: shell mode (see Shell mode); `esc` goes back |
 | `ctrl+g` | Drop the shell output waiting for the next prompt |
 | `f12` | Screenshot: the screen as SVG and as text (Downloads), text copied to the clipboard |
@@ -183,9 +193,27 @@ The agent sees what you ran: commands finished since your last prompt are attach
 the next one, with their output (long output cut to its start and end). The line above
 the prompt lists them; `ctrl+g` drops them.
 
-## Files
+## Sidebar
 
-`ctrl+b` opens the files panel: the working directory under `workspace/`, and one folder
+![The sidebar with the plan and the files](images/sidebar.svg)
+
+`ctrl+b` opens the sidebar at the left (and `ctrl+b` closes it again): the agent's
+**plan** on top, the **files** below; `enter` on a section title folds it, `esc` goes
+back to the prompt and leaves the sidebar open. The sidebar is 40 columns wide, at most
+45% of the terminal, so an 80-column terminal keeps a 44-column conversation.
+
+The plan section shows every plan of the session as the agent updates it: entries with
+their status and priority, or a Markdown plan with its file. With `sidebar = "auto"`
+(the default) the sidebar opens by itself when the first plan arrives, if the terminal
+is at least 120 columns wide and you have not opened or closed the sidebar in that tab
+yourself; the focus stays in the prompt. `sidebar = "open"` opens it with every tab,
+`"closed"` leaves it to `ctrl+b`. While the sidebar is open, the plan in the
+conversation is one line (progress and the entry being worked on); closed, it is the
+full block again.
+
+### Files
+
+The files section shows the working directory under `workspace/`, and one folder
 per mount (see `mounts` in the configuration). Files acptui can look into open like
 folders: archives by their members, Markdown files by section, source files by class
 and function (with `upathtools[tree-sitter]`, which acptui installs). Files the agent
@@ -254,6 +282,10 @@ tool_expand = "auto"               # auto (by kind), always, never, failed
 auto_copy = false                  # copy text as soon as it is selected
 column_width = 0                   # a centered column this wide (0: full width)
 footer = true                      # the key footer
+status_line = true                 # the line under the prompt: agent, activity, mode, model, context
+compact_input = false              # a prompt without its top and bottom border (two more lines)
+sidebar = "auto"                   # auto (opens for a plan from 120 columns), open or closed
+pinned_agents = ["claude", "codex"]  # first in the picker; 1-9 start them
 max_blocks = 0                     # blocks kept on screen (0: all; the session keeps all)
 diff_wrap = false                  # wrap long lines in unified diffs
 history = true                     # prompt history and recent sessions, across sessions
@@ -270,7 +302,7 @@ sounds = true
 turn_end = true                    # also when a turn ends, not only for questions
 title = true                       # terminal title: session, ● while the agent waits
 
-[mounts]                           # more folders in the files panel: any fsspec URL
+[mounts]                           # more folders in the sidebar's files: any fsspec URL
 docs = "github://phil65:agentpool@main/docs"
 notes = "~/notes"
 

@@ -1,4 +1,4 @@
-"""The files panel's filesystem: the working directory (browsable into files) plus mounts.
+"""The sidebar's filesystem: the working directory (browsable into files) plus mounts.
 
 Built from upathtools parts: an ``AutoExpandFS`` over the working directory, so
 archives, Markdown files (by section) and source files (by class / function, with

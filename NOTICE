@@ -17,6 +17,11 @@ licensed under the GNU Affero General Public License v3.0:
   (after toad's src/toad/widgets/prompt.py)
 - src/acptui/config.py: the agent list `_TOAD_AGENTS` (names, commands, homepages and
   install / login commands from toad's src/toad/data/agents/*.toml)
+- src/acptui/ui/widgets/sidebar.py: the sidebar (collapsible plan and project
+  sections docked at the left, after toad's src/toad/widgets/side_bar.py and
+  src/toad/screens/main.tcss)
+- src/acptui/ui/screens/picker.py: pinned agents started with number keys (after
+  toad's launcher, "show in launcher", src/toad/screens/store.py and agent_modal.py)
 - src/acptui/data/sounds/question.wav, turn-over.wav: toad's notification sounds
   (src/toad/data/sounds/), resampled to 22 kHz mono and shortened
 

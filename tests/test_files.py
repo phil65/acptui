@@ -9,7 +9,8 @@ from acptui.config import Settings
 from acptui.files import Files, opens_like_folder
 from acptui.protocol.prompt import PromptOptions, build_prompt
 from acptui.ui.app import AcpTui
-from acptui.ui.widgets.files import FilesPanel, FileTree
+from acptui.ui.widgets.files import FileTree
+from acptui.ui.widgets.sidebar import SideBar
 from tests.test_app import SIZE, connected, until
 
 
@@ -98,7 +99,7 @@ async def test_panel_mentions_into_the_prompt(demo_spec: AgentSpec, workdir: Pat
     async with app.run_test(size=SIZE) as pilot:
         screen = await connected(pilot, app)
         await pilot.press("ctrl+b")
-        panel = screen.query_one(FilesPanel)
+        panel = screen.query_one(SideBar)
         assert panel.open
         tree = screen.query_one(FileTree)
         await until(pilot, lambda: bool(tree.root.children))

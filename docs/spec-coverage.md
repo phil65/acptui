@@ -9,7 +9,8 @@ it. Paths are relative to `src/acptui/`; tests are in `tests/`.
 Abbreviations: `conn` = `protocol/connection.py` (`AgentConnection`), `state` =
 `protocol/state.py` (`SessionState`), `session` = `ui/screens/session.py`
 (`SessionScreen`), `SC` = `test_spec_coverage.py`, `AS` = `test_app_spec.py`,
-`A` = `test_app.py`, `C` = `test_connection.py`, `S` = `test_state.py`.
+`A` = `test_app.py`, `C` = `test_connection.py`, `S` = `test_state.py`, `SB` =
+`test_sidebar.py`.
 
 ## Connection and version negotiation
 
@@ -99,7 +100,7 @@ Abbreviations: `conn` = `protocol/connection.py` (`AgentConnection`), `state` =
 | Tool call content: `content` (every block kind), `diff`, `terminal`, `session`, unknown | `ToolCallView._content_widget` | SC `test_every_content_block_kind`; A `test_tour_renders_every_kind_of_block` |
 | Diffs: add / delete / modify / move / copy / unknown changes, file type, `git_patch` (unified or split, highlighted), unknown patch formats | `ui/widgets/diff.py`, `protocol/diff.py` | `test_diff.py`; SC `test_every_content_block_kind` |
 | `terminal_update` (command, cwd, output snapshot, exit status, size, capabilities), `terminal_output_chunk` | `TerminalState`, `TerminalView` (live, ANSI, `\r` progress lines) | S `test_terminal_snapshot_chunks_and_exit`; SC `test_background_work_usage_and_cursors` |
-| `plan_update` (items with priority and status; markdown with path), `plan_removed` | `PlanView` | S `test_plans_update_in_place_and_can_be_removed`; SC `test_compaction_suggestions_plans_notices` |
+| `plan_update` (items with priority and status; markdown with path), `plan_removed` | `PlanView` in the conversation and the sidebar's `PlanPanel` | S `test_plans_update_in_place_and_can_be_removed`; SC `test_compaction_suggestions_plans_notices`; SB `test_markdown_plans_and_removed_plans` |
 | `available_commands_update` (command with input hint, skill, unknown) | `/` completion | `test_completion.py::test_complete_command`; A `test_slash_and_path_completion` |
 | `config_option_update` (select flat and grouped, boolean, unknown; categories) | `ConfigScreen`, status line | C `test_config_options_and_mode`; A `test_options_mode_and_palette` |
 | `session_info_update` (title, updated at) | Status line | S `test_session_level_updates` |

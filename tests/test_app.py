@@ -96,7 +96,7 @@ async def test_tour_renders_every_kind_of_block(demo_spec: AgentSpec, workdir: P
 
         assert screen.query(UserMessageView)
         assert screen.query(ThoughtView)
-        assert screen.query(PlanView)
+        assert screen.conversation.query(PlanView)
         tools = list(screen.query(ToolCallView))
         assert [t.entry.status for t in tools] == ["completed"] * 3
         terminal = screen.query_one(TerminalView)

@@ -43,6 +43,11 @@ ToolExpand = Literal["auto", "always", "never", "failed"]
 ImageMode = Literal["auto", "tgp", "sixel", "halfcell", "unicode", "off"]
 """How images are drawn: the best the terminal supports (``auto``), one way, or not at all."""
 
+SidebarMode = Literal["auto", "open", "closed"]
+"""When the sidebar (plan and files) shows: ``auto`` opens it when a plan arrives on a
+wide terminal, ``open`` from the start, ``closed`` only with ``ctrl+b``."""
+
+
 _ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -497,6 +502,21 @@ class Settings(BaseModel):
     footer: bool = True
     """Show the key footer (hide it for one more line)."""
 
+    status_line: bool = True
+    """Show the status line under the prompt (agent, activity, mode, model, context, cost);
+    hide it for one more line."""
+
+    compact_input: bool = False
+    """A prompt without its top and bottom border (two more lines for the conversation)."""
+
+    sidebar: SidebarMode = "auto"
+    """When the sidebar with the plan and the files shows: ``auto`` (opens by itself when a
+    plan arrives and the terminal is at least 120 columns wide), ``open`` (from the start),
+    ``closed`` (only with ``ctrl+b``)."""
+
+    pinned_agents: list[str] = Field(default_factory=list)
+    """Agent ids pinned to the top of the agent picker, in order (``1``-``9`` start them)."""
+
     diff_wrap: bool = False
     """Wrap long lines in unified diffs instead of cutting them off."""
 
@@ -526,7 +546,7 @@ class Settings(BaseModel):
     """More workspace roots for every session (if the agent supports it)."""
 
     mounts: dict[str, str] = Field(default_factory=dict)
-    """Folders of the files panel besides the workspace: name -> any fsspec / upathtools URL
+    """Folders of the sidebar's files besides the workspace: name -> any fsspec / upathtools URL
     (``github://owner:repo@main/docs``, ``s3://bucket/key``, ``~/notes``, ...)."""
 
     @model_validator(mode="after")

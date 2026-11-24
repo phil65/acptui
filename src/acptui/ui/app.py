@@ -41,9 +41,9 @@ from acptui.ui.screens.dialogs import (
     _select_values,
     method_description,
 )
-from acptui.ui.screens.picker import AgentPicker
-from acptui.ui.screens.session import SessionScreen
-from acptui.ui.screens.settings import SettingsChanged, SettingsScreen
+from acptui.ui.screens.picker import AgentPicker, PinToggled
+from acptui.ui.screens.session import LayoutSettings, SessionScreen
+from acptui.ui.screens.settings import SettingsChanged, SettingsScreen, save_setting
 from acptui.ui.widgets.image import prepare as prepare_images
 from acptui.ui.widgets.tabs import SessionTabs, TabInfo
 
@@ -208,6 +208,8 @@ class AcpTui(App[None]):
         self.alerts: list[Alert] = []
         """Alerts raised so far (see :meth:`on_attention`)."""
         self._terminal_title = ""
+        self.picker: AgentPicker | None = None
+        """The agent picker (mode ``picker``), made on mount."""
 
     def screen_text(self) -> str:
         """The current screen as plain text (what an SVG screenshot shows, without styling)."""
@@ -315,7 +317,9 @@ class AcpTui(App[None]):
         if self.settings.theme in self.available_themes:
             self.theme = self.settings.theme
         # The picker has a mode of its own: "new tab" and closing the last tab go there.
-        picker = AgentPicker(self.settings.all_agents(), str(self.cwd))
+        picker = self.picker = AgentPicker(
+            self.settings.all_agents(), str(self.cwd), pinned=self.settings.pinned_agents
+        )
         self.add_mode(PICKER_MODE, lambda: picker)
         if self.spec is None:
             self.switch_mode(PICKER_MODE)
@@ -365,8 +369,9 @@ class AcpTui(App[None]):
             recent=RecentSessions() if self.settings.history else None,
         )
         screen.tab_id = tab_id
-        screen.layout_settings = (self.settings.column_width, self.settings.footer)
+        screen.layout_settings = self.layout_settings()
         screen.max_blocks = self.settings.max_blocks
+        screen.sidebar_mode = self.settings.sidebar
         self.tabs[tab_id] = screen
         self.add_mode(tab_id, lambda: screen)
         if focus:
@@ -435,12 +440,25 @@ class AcpTui(App[None]):
     def _tab_details(self) -> dict[str, str]:
         return {tab_id: str(screen.cwd) for tab_id, screen in self.tabs.items()}
 
+    def layout_settings(self) -> LayoutSettings:
+        """The layout of the session screens, from the settings."""
+        settings = self.settings
+        return LayoutSettings(
+            column_width=settings.column_width,
+            footer=settings.footer,
+            status_line=settings.status_line,
+            compact_input=settings.compact_input,
+        )
+
     def apply_layout(self) -> None:
-        """Column width and footer of every tab; diff wrapping."""
+        """Column width, footer, status line and compact prompt of every tab; diff wrapping."""
         self.set_class(self.settings.diff_wrap, "-diff-wrap")
+        layout = self.layout_settings()
         for screen in self.tabs.values():
             if screen.is_mounted:
-                screen.apply_layout(self.settings.column_width, footer=self.settings.footer)
+                screen.apply_layout(layout)
+            else:
+                screen.layout_settings = layout
 
     def refresh_tabs(self) -> None:
         """Update the tab bars (labels, states, which one is shown)."""
@@ -474,6 +492,22 @@ class AcpTui(App[None]):
         if self.tabs:
             self.switch_tab(list(self.tabs)[-1])
 
+    def on_pin_toggled(self, message: PinToggled) -> None:
+        """Pin an agent to the picker's quick-launch list, or unpin it (saved at once)."""
+        message.stop()
+        pinned = list(self.settings.pinned_agents)
+        if message.agent_id in pinned:
+            pinned.remove(message.agent_id)
+        else:
+            pinned.append(message.agent_id)
+        self.settings = self.settings.model_copy(update={"pinned_agents": pinned})
+        try:
+            save_setting(self.config_file, "pinned_agents", pinned)
+        except (OSError, ValueError) as exc:
+            self.notify(f"Couldn't save the pinned agents: {exc}", severity="error")
+        if self.picker is not None:
+            self.picker.set_pinned(pinned)
+
     def on_agent_picker_picked(self, message: AgentPicker.Picked) -> None:
         self.spec = message.spec
         self.open_tab(message.spec, Path(message.cwd) if message.cwd else None)
@@ -502,8 +536,11 @@ class AcpTui(App[None]):
                     screen.expand_thoughts = self.settings.expand_thoughts
             case "tabs":
                 self.refresh_tabs()
-            case "column_width" | "footer" | "diff_wrap":
+            case "column_width" | "footer" | "diff_wrap" | "status_line" | "compact_input":
                 self.apply_layout()
+            case "sidebar":
+                for screen in self.tabs.values():
+                    screen.sidebar_mode = self.settings.sidebar
             case "notifications.title":
                 self._terminal_title = ""
                 self.refresh_title()

@@ -8,6 +8,7 @@ session, or one of its subagent sessions).
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import datetime as dt
 import json
 import os
@@ -44,7 +45,14 @@ from acptui.protocol.connection import (
 )
 from acptui.protocol.content import content_markdown
 from acptui.protocol.prompt import PromptOptions, build_prompt, shell_block
-from acptui.protocol.state import EntryAdded, EntryChanged, MessageEntry, SessionState, ShellEntry
+from acptui.protocol.state import (
+    EntryAdded,
+    EntryChanged,
+    MessageEntry,
+    PlanEntry,
+    SessionState,
+    ShellEntry,
+)
 from acptui.recent import RecentSession
 from acptui.shell import open_shell
 from acptui.ui.attention import Attention, TitleChanged
@@ -64,8 +72,8 @@ from acptui.ui.screens.log import LogScreen
 from acptui.ui.screens.permission import PermissionScreen, cancelled
 from acptui.ui.screens.providers import ProvidersScreen
 from acptui.ui.widgets.conversation import ConversationView
-from acptui.ui.widgets.files import FilesPanel, FileTree
 from acptui.ui.widgets.prompt import CompletionList, PromptInput
+from acptui.ui.widgets.sidebar import AUTO_OPEN_WIDTH, SideBar
 from acptui.ui.widgets.status import StatusBar
 from acptui.ui.widgets.tabs import SessionTabs
 
@@ -91,15 +99,16 @@ if TYPE_CHECKING:
     from textual.timer import Timer
     from textual.widget import Widget
 
-    from acptui.config import AgentSpec, DiffViewMode, ToolExpand
+    from acptui.config import AgentSpec, DiffViewMode, SidebarMode, ToolExpand
     from acptui.history import History
-    from acptui.protocol.state import SessionActivity
+    from acptui.protocol.state import Change, SessionActivity
     from acptui.recent import RecentSessions
     from acptui.shell import Shell, ShellCommand
     from acptui.ui.agent_log import AgentLog
     from acptui.ui.attention import AttentionKind
     from acptui.ui.screens.dialogs import ConfigChoice
     from acptui.ui.widgets.blocks import SubagentView, ToolCallView
+    from acptui.ui.widgets.files import FileTree
     from acptui.ui.widgets.tabs import TabInfo, TabState
     from acptui.ui.widgets.terminal import ShellView, TerminalView
 
@@ -112,6 +121,18 @@ ACTIVITIES: dict[str, SessionActivity] = {
 }
 STDERR_TAIL = 12
 MIN_COLUMN = 40
+
+
+@dataclass(frozen=True)
+class LayoutSettings:
+    """The layout settings of a session screen (the app updates them)."""
+
+    column_width: int = 0
+    """A centered column for the conversation and the prompt (0: full width)."""
+    footer: bool = True
+    status_line: bool = True
+    compact_input: bool = False
+
 
 CLIENT_COMMANDS: tuple[Command, ...] = tuple(
     Command(name=f"acptui:{name}", description=f"{description} *(acptui)*")
@@ -225,6 +246,22 @@ class SessionScreen(Screen[None]):
         #shell-context { height: auto; padding: 0 1; color: $text-muted; display: none; }
         #shell-context.-pending { display: block; }
     }
+    SessionScreen.-sidebar-open #conversation PlanView {
+        border: none;
+        border-left: wide $secondary 60%;
+        padding: 0 1;
+        #plan-items, #plan-markdown { display: none; }
+        #plan-summary { display: block; }
+    }
+    SessionScreen.-compact-input PromptInput {
+        border: none;
+        border-left: wide $primary 50%;
+        min-height: 1;
+        &:focus { border: none; border-left: wide $primary; }
+        &.-disabled { border: none; border-left: wide $panel; }
+        &.-shell { border: none; border-left: wide $warning 50%; }
+        &.-shell:focus { border: none; border-left: wide $warning; }
+    }
     """
 
     BINDINGS: ClassVar = [
@@ -236,7 +273,7 @@ class SessionScreen(Screen[None]):
         Binding("ctrl+d", "toggle_diff", "Diff view", show=False),
         Binding("ctrl+f", "fork_session", "Fork", show=False),
         Binding("ctrl+l", "show_log", "Log"),
-        Binding("ctrl+b", "toggle_files", "Files"),
+        Binding("ctrl+b", "toggle_sidebar", "Sidebar"),
         Binding("ctrl+g", "drop_shell_context", "Drop shell output", show=False),
         Binding("f1", "help", "Help"),
         Binding("f2", "rename_session", "Rename", show=False),
@@ -270,7 +307,7 @@ class SessionScreen(Screen[None]):
         self.spec = spec
         self.cwd = cwd
         self.files = Files(cwd, mounts)
-        """The files panel's filesystem: the workspace (browsable into files) and the mounts."""
+        """The sidebar's filesystem: the workspace (browsable into files) and the mounts."""
         self._files_timer: Timer | None = None
         self.shell: Shell | None = None
         """The shell of shell mode (started with the first command)."""
@@ -296,38 +333,79 @@ class SessionScreen(Screen[None]):
         self.connection_state = "starting"
         """``starting``, ``connected`` or ``disconnected``."""
         self.tab_id = ""
+        """The app's name for this tab (its Textual mode)."""
         self.tab_bar = SessionTabs()
-        self.layout_settings: tuple[int, bool] = (0, True)
+        """The tab bar (updated by the app, also before the screen is composed)."""
+        self.layout_settings = LayoutSettings()
+        """Applied on mount (the app updates them later with :meth:`apply_layout`)."""
         self.max_blocks = 0
         """Blocks kept in the conversation view (0: all)."""
-        """Column width and footer, applied on mount (the app updates them later)."""
-        """The tab bar (updated by the app, also before the screen is composed)."""
-        """The app's name for this tab (its Textual mode)."""
+        self.sidebar_mode: SidebarMode = "auto"
+        """When the sidebar opens by itself (the ``sidebar`` setting)."""
+        self._sidebar_toggled = False
+        """The user opened or closed the sidebar in this tab: it no longer opens by itself."""
         self._shown = asyncio.Event()
         """Set when the screen is shown again (dialogs of a background tab wait for it)."""
         self._subagent_screens: dict[str, SubagentScreen] = {}
 
     # --- Layout ---------------------------------------------------------------------
 
-    def action_toggle_files(self) -> None:
-        """Show or hide the files panel (and mark what the agent touched)."""
-        panel = self.query_one(FilesPanel)
-        panel.toggle()
-        if panel.open:
-            self._mark_touched()
-            if self._files_timer is None:
-                self._files_timer = self.set_interval(2.0, self._mark_touched, name="files-markers")
-            else:
-                self._files_timer.resume()
-        else:
-            if self._files_timer is not None:
-                self._files_timer.pause()
+    @property
+    def sidebar(self) -> SideBar:
+        """The sidebar: plan and files."""
+        return self.query_one(SideBar)
+
+    def action_toggle_sidebar(self) -> None:
+        """Show (and focus) or hide the sidebar."""
+        self._sidebar_toggled = True
+        if self.sidebar.open:
+            self.close_sidebar()
             self.prompt.focus()
+        else:
+            self.open_sidebar(focus=True)
+
+    def open_sidebar(self, *, focus: bool = False) -> None:
+        """Show the sidebar (and mark the files the agent touched while it is open)."""
+        self.sidebar.show(focus=focus)
+        self.add_class("-sidebar-open")
+        self._mark_touched()
+        if self._files_timer is None:
+            self._files_timer = self.set_interval(2.0, self._mark_touched, name="files-markers")
+        else:
+            self._files_timer.resume()
+
+    def close_sidebar(self) -> None:
+        """Hide the sidebar."""
+        self.sidebar.hide()
+        self.remove_class("-sidebar-open")
+        if self._files_timer is not None:
+            self._files_timer.pause()
+
+    def on_side_bar_leave(self, message: SideBar.Leave) -> None:
+        message.stop()
+        self.prompt.focus()
+
+    def _update_plans(self, state: SessionState, changes: list[Change]) -> None:
+        """Show plan changes in the sidebar; open it for a new plan (``sidebar = "auto"``)."""
+        if not any(
+            isinstance(change, EntryAdded | EntryChanged) and isinstance(change.entry, PlanEntry)
+            for change in changes
+        ):
+            return
+        self.sidebar.plans.show(state)
+        if (
+            self.sidebar_mode == "auto"
+            and not self._sidebar_toggled
+            and not self.sidebar.open
+            and state.plans
+            and self.app.size.width >= AUTO_OPEN_WIDTH
+        ):
+            self.open_sidebar()
 
     def _mark_touched(self) -> None:
-        panel = self.query_one(FilesPanel)
-        if panel.open and self.state is not None:
-            panel.file_tree.set_touched(self._touched_paths())
+        sidebar = self.sidebar
+        if sidebar.open and self.state is not None:
+            sidebar.file_tree.set_touched(self._touched_paths())
 
     def _touched_paths(self) -> set[str]:
         """Workspace-relative paths of the session's tool call locations."""
@@ -349,7 +427,7 @@ class SessionScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield self.tab_bar
-        yield FilesPanel(self.files)
+        yield SideBar(self.files)
         yield ConversationView(
             self.agent_log,
             diff_mode=self.diff_mode,
@@ -382,17 +460,22 @@ class SessionScreen(Screen[None]):
         """The status line."""
         return self.query_one(StatusBar)
 
-    def apply_layout(self, column_width: int, *, footer: bool) -> None:
-        """A centered column for the conversation and the prompt (0: full width); the footer."""
+    def apply_layout(self, layout: LayoutSettings) -> None:
+        """Column width, footer, status line and compact prompt."""
+        self.layout_settings = layout
+        column_width = layout.column_width
         width = max(column_width, MIN_COLUMN) if column_width else None
         self.styles.align_horizontal = "center" if width else "left"
         for widget in (self.conversation, self.query_one("#prompt-area")):
             widget.styles.max_width = width
-        self.query_one(Footer).display = footer
+        self.query_one(Footer).display = layout.footer
+        self.status.display = layout.status_line
+        self.set_class(layout.compact_input, "-compact-input")
 
     def on_mount(self) -> None:
-        column, footer = self.layout_settings
-        self.apply_layout(column, footer=footer)
+        self.apply_layout(self.layout_settings)
+        if self.sidebar_mode == "open":
+            self.open_sidebar()
         self.conversation.max_blocks = self.max_blocks
         if self.history is not None:
             self.prompt.prompt_history = self.history.texts(shell=False)
@@ -504,6 +587,7 @@ class SessionScreen(Screen[None]):
         self.state = state
         self.status.state = state
         self.conversation.show(state)
+        self.sidebar.plans.show(state)
         if isinstance(options, list) and options:
             self.conversation.push(state.set_config_options(options))
         if isinstance(commands, list):
@@ -623,6 +707,7 @@ class SessionScreen(Screen[None]):
                 self.remember(state)
         if state is self.state:
             self.conversation.push(changes)
+            self._update_plans(state, changes)
         elif (
             screen := self._subagent_screens.get(state.session_id)
         ) is not None and screen.is_attached:

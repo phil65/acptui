@@ -33,6 +33,9 @@ history, modes and models.
 
 - **Tabs**: several agents and sessions side by side (`ctrl+t`), each with its own
   process; the tab bar shows which one works or waits for you.
+- **Sidebar** (`ctrl+b`): the agent's plan, updated live, and the project tree; it opens
+  by itself for a plan on wide terminals.
+- **Pinned agents**: `p` in the picker pins one to the top, `1`-`9` start it.
 - **Images** drawn in the terminal (kitty graphics, Sixel, or half blocks anywhere).
 - **Notifications and sounds** when an agent asks something or finishes while you look
   elsewhere (desktop or terminal notifications, terminal title).
@@ -79,7 +82,8 @@ In the app: `enter` sends, `shift+enter` / `ctrl+j` adds a line, `/` completes t
 agent's commands, `@` completes file paths (the files are attached), `escape`
 cancels the turn, `shift+tab` switches the mode, `ctrl+o` shows mode / model /
 other options, `ctrl+n` / `ctrl+r` / `ctrl+f` start, resume and fork sessions,
-`ctrl+l` shows the agent's stderr and the protocol traffic, `ctrl+t` opens a new tab,
+`ctrl+l` shows the agent's stderr and the protocol traffic, `ctrl+b` the sidebar (plan
+and files), `ctrl+t` opens a new tab,
 `alt+left` / `alt+right` switch tabs, `ctrl+p` opens the command palette (login,
 providers, everything else) and `f1` the help.
 
@@ -109,6 +113,8 @@ directory (`acptui config` prints the path):
 default_agent = "codex"
 theme = "tokyo-night"
 diff_view = "auto"                 # unified, split or auto
+pinned_agents = ["claude", "codex"]  # first in the picker, 1-9 start them
+sidebar = "auto"                   # plan and files: auto (opens for a plan), open, closed
 system_prompt = "Prefer small commits."
 additional_directories = ["~/src/shared"]
 

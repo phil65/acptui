@@ -58,6 +58,9 @@ FIELDS: tuple[SettingField, ...] = (
     SettingField("tabs", "Tab bar", "Always, with several tabs, or never"),
     SettingField("column_width", "Column", "Centered column width (0: full width)"),
     SettingField("footer", "Footer", "Show the keys at the bottom"),
+    SettingField("status_line", "Status line", "Agent, activity, mode, model, context, cost"),
+    SettingField("compact_input", "Compact prompt", "No border above and below the prompt"),
+    SettingField("sidebar", "Sidebar", "auto (opens for a plan when wide), open, or closed"),
     SettingField("diff_wrap", "Wrap diffs", "Wrap long lines in unified diffs"),
     SettingField(
         "images", "Images", "How images are drawn (auto: the best the terminal has)", True
@@ -114,7 +117,7 @@ def with_value(settings: Settings, key: str, value: SettingValue) -> Settings:
     return Settings.model_validate(data)
 
 
-def save_setting(path: Path, key: str, value: SettingValue) -> None:
+def save_setting(path: Path, key: str, value: SettingValue | list[str]) -> None:
     """Write one setting into ``config.toml``, keeping everything else in the file."""
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     document = tomlkit.parse(text)

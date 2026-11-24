@@ -718,7 +718,7 @@ A terminal UI for AI coding agents speaking **ACP v2**.
 | `f3` | Settings (saved to config.toml) |
 | `ctrl+p` | Command palette |
 | `f5` | Restart the agent |
-| `ctrl+b` | Files panel; `a` mentions the highlighted node |
+| `ctrl+b` | Sidebar: the plan and the files; `a` mentions a file, `esc` back to the prompt |
 | `!` / `$` | Shell mode (on an empty prompt); `esc` back, `ctrl+c` interrupts |
 | `ctrl+g` | Drop the shell output waiting for the next prompt |
 | `f12` | Screenshot: SVG + text to Downloads, text copied |

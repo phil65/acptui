@@ -72,10 +72,20 @@ class AgentDetailsScreen(ModalScreen[str | None]):
         Binding("l", "login", "Log in"),
         Binding("o", "homepage", "Homepage"),
         Binding("t", "test_v2", "Test ACP v2"),
+        Binding("p", "pin", "Pin / unpin"),
     ]
 
-    def __init__(self, spec: AgentSpec, cwd: Path, probe: ProbeResult | None = None) -> None:
+    def __init__(
+        self,
+        spec: AgentSpec,
+        cwd: Path,
+        probe: ProbeResult | None = None,
+        *,
+        pinned: bool = False,
+    ) -> None:
         super().__init__()
+        self.pinned = pinned
+        """Whether the agent is pinned to the top of the picker."""
         self.spec = spec
         self.cwd = cwd
         self.probe = probe
@@ -116,6 +126,7 @@ class AgentDetailsScreen(ModalScreen[str | None]):
                 if spec.homepage:
                     yield Button("Homepage (o)", id="homepage", compact=True)
                 yield Button("Test v2 (t)", id="test_v2", compact=True)
+                yield Button(self._pin_label(), id="pin", compact=True)
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id:
@@ -138,6 +149,17 @@ class AgentDetailsScreen(ModalScreen[str | None]):
         self.probe = result
         self.tested = True
         panel.update(self._probe_text())
+
+    def _pin_label(self) -> str:
+        return "Unpin (p)" if self.pinned else "Pin to top (p)"
+
+    def action_pin(self) -> None:
+        """Pin the agent to the top of the picker (``1``-``9`` start it), or unpin it."""
+        from acptui.ui.screens.picker import PinToggled
+
+        self.pinned = not self.pinned
+        self.post_message(PinToggled(self.spec.id))
+        self.query_one("#pin", Button).label = self._pin_label()
 
     def action_start(self) -> None:
         """Start a session with the agent."""

@@ -32,6 +32,13 @@ there is no v1 code path. AGPL-3.0-or-later; a few UI pieces are adapted from to
   - `widgets/conversation.py`: `ConversationView` renders `Change`s in order from a
     queue (one render loop per view); `widgets/blocks.py` has one widget per entry
     kind; `diff.py`, `terminal.py`, `prompt.py` (editor + completion), `status.py`.
+  - `widgets/sidebar.py`: `SideBar` (`ctrl+b`), collapsible Plan (`PlanPanel`, synced from
+    `SessionScreen._update_plans` on plan changes, auto-open via the `sidebar` setting) and
+    Files (`widgets/files.py` `FileTree`) sections. While it is open the screen has the
+    class `-sidebar-open` and the conversation's `PlanView` shows only its summary line.
+  - `screens/picker.py`: pinned agents (`pinned_agents`) first, `1`-`9` start them; `p`
+    here or in `screens/agent.py` posts `PinToggled`, the app saves the list and refills
+    the picker.
   - `screens/`: `permission.py`, `elicitation.py`, `dialogs.py` (session list, config,
     fork, rename, confirm, help), `providers.py`, `picker.py`, `log.py`.
 - `src/acptui/ui/app.py` also keeps the **tabs** (one `SessionScreen` per Textual mode,
@@ -64,6 +71,7 @@ there is no v1 code path. AGPL-3.0-or-later; a few UI pieces are adapted from to
 | Spec coverage table | `docs/spec-coverage.md` (keep it in sync with code and tests) |
 | Screenshots | `uv run python scripts/screenshots.py` -> `docs/images/*.svg` |
 | A new setting | `config.py` `Settings`, `FIELDS` in `ui/screens/settings.py`, `on_settings_changed` in `ui/app.py`, `docs/usage.md` |
+| A layout setting | `LayoutSettings` in `ui/screens/session.py`, `AcpTui.layout_settings` / `apply_layout` |
 | toad feature status | `docs/toad-comparison.md` (keep it in sync) |
 
 ## Commands

@@ -100,7 +100,7 @@ async def test_markdown_descriptions_in_the_ui(demo_spec: AgentSpec, workdir: Pa
         await pilot.press("1")
         await until(pilot, lambda: stop_reason(screen) == "end_turn")
         await pilot.pause(0.2)
-        plan = screen.query_one(PlanView)
+        plan = screen.conversation.query_one(PlanView)
         assert "Propose an edit to README.md" in str(plan.items.render())
 
         await pilot.press("ctrl+o")

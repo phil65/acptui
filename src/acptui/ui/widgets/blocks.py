@@ -519,7 +519,8 @@ class PlanView(Vertical):
     """The agent's plan (adapted from toad's plan widget: status icons, priority pills).
 
     Plan entries and Markdown plans are Markdown (ACP v2): entries are rendered inline
-    (one line each), a Markdown plan as a document.
+    (one line each), a Markdown plan as a document. While the session's sidebar is open
+    (it shows the plan in full), the plan in the conversation is one summary line.
     """
 
     ALLOW_MAXIMIZE = True
@@ -533,6 +534,9 @@ class PlanView(Vertical):
         margin: 0 0 1 0;
         #plan-items { height: auto; }
         #plan-markdown { height: auto; margin: 0; padding: 0; background: transparent; }
+        #plan-summary { height: 1; display: none; text-wrap: nowrap; text-overflow: ellipsis; }
+        &.-items #plan-markdown { display: none; }
+        &.-markdown #plan-items { display: none; }
     }
     PlanView.-removed { display: none; }
     """
@@ -543,14 +547,17 @@ class PlanView(Vertical):
         "low": ("L", "$primary-muted", "$text-primary"),
     }
 
-    def __init__(self, entry: PlanEntry) -> None:
+    def __init__(self, entry: PlanEntry, *, title: str = "Plan") -> None:
         super().__init__()
         self.entry = entry
-        self.border_title = "Plan"
+        self.border_title = title
         self.items = Static(id="plan-items")
         self.markdown = AgentMarkdown(id="plan-markdown")
+        self.summary = Static(id="plan-summary")
+        """One line: progress and the current entry (shown while the sidebar is open)."""
 
     def compose(self) -> ComposeResult:
+        yield self.summary
         yield self.items
         yield self.markdown
 
@@ -564,8 +571,9 @@ class PlanView(Vertical):
         self.set_class(self.entry.removed, "-removed")
         content = self.entry.content
         is_items = isinstance(content, PlanItems)
-        self.items.display = is_items
-        self.markdown.display = not is_items
+        self.set_class(is_items, "-items")
+        self.set_class(not is_items, "-markdown")
+        self.summary.update(plan_summary(self.entry))
         if not isinstance(content, PlanItems):
             path = content.path if is_set(content.path) and content.path else None
             if path:
@@ -587,6 +595,30 @@ class PlanView(Vertical):
         done = sum(1 for item in content.entries if item.status == "completed")
         self.border_subtitle = f"{done}/{len(content.entries)}"
         self.items.update(Content("\n").join(lines) if lines else Content("(empty plan)"))
+
+
+def plan_summary(entry: PlanEntry) -> Content:
+    """A plan in one line: progress and the entry being worked on (or the next one)."""
+    from aclientp.schema.v2 import PlanItems
+
+    content = entry.content
+    if not isinstance(content, PlanItems):
+        path = content.path if is_set(content.path) and content.path else None
+        first = next((line.strip() for line in content.content.splitlines() if line.strip()), "")
+        label = path.removeprefix("file://").rsplit("/", 1)[-1] if path else first
+        return Content.assemble(("plan ", "$text-muted"), inline_markdown(label, single_line=True))
+    entries = content.entries
+    done = sum(1 for item in entries if item.status == "completed")
+    current = next((item for item in entries if item.status == "in_progress"), None) or next(
+        (item for item in entries if item.status == "pending"), None
+    )
+    parts: list[Content | tuple[str, str] | str] = [(f"plan {done}/{len(entries)}", "$text-muted")]
+    if current is not None:
+        parts += ["  ", status_icon(current.status), " "]
+        parts.append(inline_markdown(current.content, single_line=True))
+    elif entries:
+        parts.append(("  done", "$text-success"))
+    return Content.assemble(*parts)
 
 
 class NoticeView(Static):
