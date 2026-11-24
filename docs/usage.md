@@ -92,24 +92,18 @@ acptui serve --host 0.0.0.0 --public-url https://box.example.com run codex
 
 `acptui serve` runs acptui as a web app ([textual-serve](https://github.com/Textualize/textual-serve)):
 every browser tab starts `acptui OPTIONS COMMAND` (the options before `serve`, the
-command after its own options) in a new process on the server. There is no
-authentication: anyone who reaches the address can use your agents, so it binds to
-localhost unless you pass `--host` (acptui warns then); put it behind an authenticating
-proxy to share it. Images are drawn with half blocks in the browser.
+command after its own options) in a new process on the server.
 
-## acptui's own commands
-
-Commands starting with `/acptui:` are acptui's, not the agent's (completion marks them
-*(acptui)*):
-
-| Command | Does |
-| --- | --- |
-| `/acptui:export` | Save the conversation as Markdown (Downloads) and copy it |
-| `/acptui:clear` | Clear the view (the session keeps its history) |
-| `/acptui:rename TITLE` | Rename the session |
-| `/acptui:new` | New session in this tab |
-| `/acptui:tab`, `/acptui:close` | New tab, close this tab |
-| `/acptui:about` | Versions, paths, terminal, agent (for bug reports) |
+It is protected like Jupyter: each run makes a random token and prints the URL with it
+(`http://localhost:8000/?token=...`). The first visit with the token sets an HTTP-only,
+`SameSite=Strict` cookie; every request without the token or the cookie gets `401`, the
+page, its files and its WebSocket alike. WebSocket connections from other sites are
+refused (`403`): browsers do not apply CORS to WebSockets, so the server checks the
+`Origin` itself (it must be the server's own or `--public-url`'s). `--token TOKEN` (or
+`ACPTUI_SERVE_TOKEN`) sets the token, e.g. behind a proxy; `--no-token` turns it off and
+is only accepted on a loopback address. Use HTTPS (a proxy) when you serve beyond
+localhost: the token travels in the URL and the cookie. Images are drawn with half
+blocks in the browser.
 
 ## Tabs
 

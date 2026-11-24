@@ -32,6 +32,7 @@ classifiers = [
 dependencies = [
   # Only add below (Copier)
   "aclientp[websocket]>=0.5.1",  # 0.5.1: no error when the agent streams after close
+  "aiohttp>=3.9",
   "anyio>=4.0",
   "frizbee>=0.13.0",
   "markdown-it-py>=3",

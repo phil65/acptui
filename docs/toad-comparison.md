@@ -18,7 +18,7 @@ Status: **yes** (acptui has it), **partly**, **deferred**, **no** (left out on p
 | `toad acp "COMMAND"` (any ACP command) | `acptui run -- COMMAND ARGS` | yes |
 | `toad acp --title` | the command's name is the title | no: not needed |
 | — | `acptui connect URL` (Streamable HTTP, WebSocket) | acptui only |
-| `toad serve`, `toad run --serve`, `--host/--port/--public-url` | `acptui serve [--host --port --public-url] COMMAND` | yes |
+| `toad serve`, `toad run --serve`, `--host/--port/--public-url` | `acptui serve [--host --port --public-url --token] COMMAND`, with a token in the URL (Jupyter-style cookie) and an Origin check for WebSockets; toad's server has neither | yes |
 | `toad settings` (path of the settings file) | `acptui config` | yes |
 | `toad about` | palette "About acptui" / `/acptui:about` | yes |
 | `toad replay LOG` (replay an agent log as a fake agent) | the bundled demo agent covers testing; the log screen shows traffic | no: little value for users |
@@ -151,7 +151,7 @@ settings screen, history, recent sessions, the fuzzy file search and the export.
 - **No network calls of its own**: no update check, no statistics; images are never
   fetched from URIs; install commands run only when you pick them, shown first.
 - **Auto copy** is off by default (it would overwrite the clipboard on every selection).
-- **`acptui serve`** binds to localhost and warns otherwise: textual-serve has no
-  authentication.
+- **`acptui serve`** requires a token per run and checks the WebSocket `Origin`
+  (textual-serve has no authentication); `--no-token` only on loopback.
 - **Agent HTML** is shown as text, links need a click (and a confirmation unless
   `http(s)`).

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
 from typing import TYPE_CHECKING
@@ -73,13 +74,21 @@ def _parser() -> argparse.ArgumentParser:
         help="serve acptui in the browser (textual-serve); the rest is the acptui command",
         description=(
             "Serve acptui as a web app: every browser tab runs `acptui [OPTIONS] COMMAND` "
-            "in a new process. There is no authentication: anyone who reaches the address "
-            "can use your agents."
+            "in a new process. A random token in the URL protects it (printed at start); "
+            "WebSockets from other sites are refused."
         ),
     )
     serve.add_argument("--host", default="localhost", help="address to bind (default: localhost)")
     serve.add_argument("--port", type=int, default=8000, help="port (default: 8000)")
     serve.add_argument("--public-url", metavar="URL", help="URL the browser uses, behind a proxy")
+    serve.add_argument(
+        "--token",
+        default=os.environ.get("ACPTUI_SERVE_TOKEN"),
+        help="the access token (default: $ACPTUI_SERVE_TOKEN, else a random one per run)",
+    )
+    serve.add_argument(
+        "--no-token", action="store_true", help="no token (only on a loopback address)"
+    )
     serve.add_argument(
         "served", nargs=argparse.REMAINDER, metavar="COMMAND", help="e.g. `run demo`"
     )
@@ -191,9 +200,6 @@ def main(argv: Sequence[str] | None = None) -> None:
     AcpTui(settings, cwd, spec, resume_id=resume, setup=setup, config_file=options.config).run()
 
 
-LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-
-
 def served_command(argv: Sequence[str], served: Sequence[str]) -> list[str]:
     """The command each browser session runs.
 
@@ -207,17 +213,21 @@ def serve_web(options: argparse.Namespace, argv: Sequence[str]) -> int:
     """Run the web server until ctrl+c."""
     import shlex
 
-    from textual_serve.server import Server
+    from acptui.serve import SecureServer, is_loopback, new_token
 
+    if options.no_token and not is_loopback(options.host):
+        print("error: --no-token is only allowed on a loopback address", file=sys.stderr)
+        return 2
+    token = None if options.no_token else (options.token or new_token())
     command = shlex.join(served_command(argv, options.served))
-    if options.host not in LOCAL_HOSTS:
-        print(
-            f"warning: serving on {options.host}: anyone who can reach it can use your agents",
-            file=sys.stderr,
-        )
     title = shlex.join(["acptui", *options.served]) if options.served else "acptui"
-    Server(
-        command, host=options.host, port=options.port, title=title, public_url=options.public_url
+    SecureServer(
+        command,
+        host=options.host,
+        port=options.port,
+        title=title,
+        public_url=options.public_url,
+        token=token,
     ).serve()
     return 0
 
