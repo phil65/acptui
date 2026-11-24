@@ -179,6 +179,7 @@ class AcpTui(App[None]):
     ]
     CSS = """
     Screen { background: $background; }
+    .-diff-wrap DiffView .diff-lines.unified { text-wrap: wrap; }
     """
 
     def __init__(
@@ -324,6 +325,7 @@ class AcpTui(App[None]):
                 self.spec, resume_id=self.resume_id, setup=self.setup_override, focus=True
             )
         self.set_interval(0.5, self.refresh_tabs, name="tabs")
+        self.set_class(self.settings.diff_wrap, "-diff-wrap")
 
     # --- Tabs: one session screen (and agent) per Textual mode -----------------------
 
@@ -364,6 +366,7 @@ class AcpTui(App[None]):
             recent=RecentSessions() if self.settings.history else None,
         )
         screen.tab_id = tab_id
+        screen.layout_settings = (self.settings.column_width, self.settings.footer)
         self.tabs[tab_id] = screen
         self.add_mode(tab_id, lambda: screen)
         if focus:
@@ -432,6 +435,13 @@ class AcpTui(App[None]):
     def _tab_details(self) -> dict[str, str]:
         return {tab_id: str(screen.cwd) for tab_id, screen in self.tabs.items()}
 
+    def apply_layout(self) -> None:
+        """Column width and footer of every tab; diff wrapping."""
+        self.set_class(self.settings.diff_wrap, "-diff-wrap")
+        for screen in self.tabs.values():
+            if screen.is_mounted:
+                screen.apply_layout(self.settings.column_width, footer=self.settings.footer)
+
     def refresh_tabs(self) -> None:
         """Update the tab bars (labels, states, which one is shown)."""
         infos = self.tab_infos()
@@ -492,6 +502,8 @@ class AcpTui(App[None]):
                     screen.expand_thoughts = self.settings.expand_thoughts
             case "tabs":
                 self.refresh_tabs()
+            case "column_width" | "footer" | "diff_wrap":
+                self.apply_layout()
             case "notifications.title":
                 self._terminal_title = ""
                 self.refresh_title()

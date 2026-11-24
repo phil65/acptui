@@ -111,6 +111,7 @@ ACTIVITIES: dict[str, SessionActivity] = {
     "requires_action": "requires_action",
 }
 STDERR_TAIL = 12
+MIN_COLUMN = 40
 
 CLIENT_COMMANDS: tuple[Command, ...] = tuple(
     Command(name=f"acptui:{name}", description=f"{description} *(acptui)*")
@@ -296,6 +297,8 @@ class SessionScreen(Screen[None]):
         """``starting``, ``connected`` or ``disconnected``."""
         self.tab_id = ""
         self.tab_bar = SessionTabs()
+        self.layout_settings: tuple[int, bool] = (0, True)
+        """Column width and footer, applied on mount (the app updates them later)."""
         """The tab bar (updated by the app, also before the screen is composed)."""
         """The app's name for this tab (its Textual mode)."""
         self._shown = asyncio.Event()
@@ -377,7 +380,17 @@ class SessionScreen(Screen[None]):
         """The status line."""
         return self.query_one(StatusBar)
 
+    def apply_layout(self, column_width: int, *, footer: bool) -> None:
+        """A centered column for the conversation and the prompt (0: full width); the footer."""
+        width = max(column_width, MIN_COLUMN) if column_width else None
+        self.styles.align_horizontal = "center" if width else "left"
+        for widget in (self.conversation, self.query_one("#prompt-area")):
+            widget.styles.max_width = width
+        self.query_one(Footer).display = footer
+
     def on_mount(self) -> None:
+        column, footer = self.layout_settings
+        self.apply_layout(column, footer=footer)
         if self.history is not None:
             self.prompt.prompt_history = self.history.texts(shell=False)
             self.prompt.shell_history = self.history.texts(shell=True)

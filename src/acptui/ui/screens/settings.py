@@ -30,7 +30,10 @@ if TYPE_CHECKING:
     from textual.app import ComposeResult
 
 
-SettingValue = str | bool
+SettingValue = str | bool | int
+
+COLUMN_WIDTHS = (0, 80, 100, 120, 140)
+"""The column widths the settings screen cycles through (any width works in the file)."""
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,9 @@ FIELDS: tuple[SettingField, ...] = (
         "tool_expand", "Tool calls", "auto (by kind), always, never, or failed ones", True
     ),
     SettingField("tabs", "Tab bar", "Always, with several tabs, or never"),
+    SettingField("column_width", "Column", "Centered column width (0: full width)"),
+    SettingField("footer", "Footer", "Show the keys at the bottom"),
+    SettingField("diff_wrap", "Wrap diffs", "Wrap long lines in unified diffs"),
     SettingField(
         "images", "Images", "How images are drawn (auto: the best the terminal has)", True
     ),
@@ -72,6 +78,8 @@ def choices(key: str) -> tuple[SettingValue, ...]:
     name = key
     if key.startswith("notifications."):
         model, name = NotificationSettings, key.removeprefix("notifications.")
+    if key == "column_width":
+        return COLUMN_WIDTHS
     annotation = model.model_fields[name].annotation
     if annotation is bool:
         return (True, False)
@@ -90,7 +98,7 @@ def get_value(settings: Settings, key: str) -> SettingValue:
         value = getattr(settings.notifications, key.removeprefix("notifications."))
     else:
         value = getattr(settings, key)
-    if not isinstance(value, str | bool):
+    if not isinstance(value, str | bool | int):
         msg = f"{key} is not a simple setting"
         raise TypeError(msg)
     return value
@@ -126,6 +134,8 @@ def show(value: SettingValue) -> str:
     """A value for the list."""
     if isinstance(value, bool):
         return "on" if value else "off"
+    if isinstance(value, int):
+        return str(value) if value else "full width"
     return value
 
 

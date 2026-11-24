@@ -100,3 +100,29 @@ async def test_auto_copy(
         monkeypatch.setattr(screen, "get_selected_text", lambda: "selected words")
         app.on_text_selected()
         assert copied == ["selected words"]
+
+
+async def test_column_footer_and_diff_wrap(demo_spec: AgentSpec, workdir: Path) -> None:
+    from textual.widgets import Footer
+
+    from acptui.ui.widgets.diff import DiffView
+
+    settings = Settings(column_width=60, footer=False, diff_wrap=True)
+    app = AcpTui(settings, workdir, demo_spec)
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await connected(pilot, app)
+        await pilot.pause(0.1)
+        assert screen.conversation.outer_size.width == 60
+        assert screen.conversation.region.x == 30  # centered
+        assert not screen.query_one(Footer).display
+        assert app.has_class("-diff-wrap")
+        await send(pilot, "/media")
+        await until(pilot, lambda: bool(screen.query(DiffView)))
+        unified = screen.query(".diff-lines.unified").first()
+        assert unified.styles.text_wrap == "wrap"
+
+        app.settings = app.settings.model_copy(update={"column_width": 0, "footer": True})
+        app.apply_layout()
+        await pilot.pause(0.1)
+        assert screen.conversation.outer_size.width == 120
+        assert screen.query_one(Footer).display

@@ -224,7 +224,7 @@ class DiffView(Vertical):
                     classes="diff-header",
                 )
             if self.raw_patch is not None:
-                yield Static(Content(self.raw_patch), classes="diff-lines")
+                yield Static(Content(self.raw_patch), classes="diff-lines unified")
             return
         operations = {change_paths(c)[1]: c.operation for c in self.diff.changes}
         for file in self.files:
@@ -244,7 +244,8 @@ class DiffView(Vertical):
                     yield Static(Content("\n").join(left), classes="diff-lines left")
                     yield Static(Content("\n").join(right), classes="diff-lines right")
             else:
-                yield Static(Content("\n").join(unified_lines(file)), classes="diff-lines")
+                lines = Content("\n").join(unified_lines(file))
+                yield Static(lines, classes="diff-lines unified")
 
     def watch_mode(self, mode: DiffViewMode) -> None:
         self._update_split()

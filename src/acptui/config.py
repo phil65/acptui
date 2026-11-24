@@ -486,6 +486,16 @@ class Settings(BaseModel):
     """Which tool calls start expanded: ``auto`` (by kind: diffs and terminals open, reads
     and searches closed), ``always``, ``never``, or ``failed`` ones only."""
 
+    column_width: int = Field(default=0, ge=0)
+    """Keep the conversation and the prompt in a centered column this wide (0: full width;
+    40 at least)."""
+
+    footer: bool = True
+    """Show the key footer (hide it for one more line)."""
+
+    diff_wrap: bool = False
+    """Wrap long lines in unified diffs instead of cutting them off."""
+
     auto_copy: bool = False
     """Copy text to the clipboard as soon as you select it with the mouse."""
 

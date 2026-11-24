@@ -59,7 +59,7 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | Thoughts (setting to show them) | collapsible, `expand_thoughts` | yes |
 | Tool calls (expand policy setting: never / always / success / fail) | `tool_expand`: auto (by kind and content) / always / never / failed; `enter` toggles | yes (no "success only": a successful call is not more interesting than a running one) |
 | Diffs: unified / split / auto, syntax highlighted | yes, `ctrl+d`, `diff_view` | yes |
-| Diff annotations (`+`/`-`), wrap setting | — | planned |
+| Diff annotations (`+`/`-`), wrap setting | `+`/`-` signs always; `diff_wrap` for unified diffs | yes |
 | Plans (sidebar and inline) | inline plan block | partly |
 | Terminals in tool calls | live terminal view (agent-owned in v2) | yes (terminal work by another session) |
 | Images | drawn (kitty graphics, Sixel, half blocks) | yes: toad shows none |
@@ -109,8 +109,8 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | --- | --- | --- |
 | Settings screen (edit in the app) | `f3`: display and notification settings, applied at once where possible and saved into `config.toml` with its comments kept; agents and MCP servers stay in the file | yes |
 | Theme | `theme` (and Textual's palette theme switcher) | yes |
-| Prompt placeholder, compact input, footer, info bar, status line toggles | — | planned (a few) |
-| Column mode (fixed width) | — | planned |
+| Prompt placeholder, compact input, footer, info bar, status line toggles | `footer`; the status line stays (it carries mode, model, context and cost) | partly: the other toggles save a line or two at the cost of more settings |
+| Column mode (fixed width) | `column_width` | yes |
 | Scrollbar size | — | no: Textual default |
 | Auto copy on selection | `auto_copy` (off by default: it overwrites the clipboard on every selection) | yes |
 | pyperclip clipboard fallback | OSC 52 (Textual) | no: OSC 52 works in most terminals |
