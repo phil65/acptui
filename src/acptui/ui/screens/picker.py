@@ -158,6 +158,7 @@ class AgentPicker(Screen[None]):
         self._set_pinned_ids(pinned)
         if self.is_mounted:
             self._refill()
+            self.refresh_bindings()
 
     def _highlighted_id(self) -> str | None:
         options = self.query_one("#agents", OptionList)
@@ -182,6 +183,12 @@ class AgentPicker(Screen[None]):
         """Pin the highlighted agent to the top (or unpin it)."""
         if (agent_id := self._highlighted_id()) is not None:
             self.post_message(PinToggled(agent_id))
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """No "start pinned" keys (nor their footer entry) without pinned agents."""
+        if action == "quick_launch":
+            return bool(self.pinned)
+        return True
 
     def action_quick_launch(self, index: int) -> None:
         """Start the pinned agent with this number (``1`` is 0)."""

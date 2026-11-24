@@ -63,11 +63,14 @@ async def test_pin_and_unpin_in_the_picker_and_the_details(workdir: Path, tmp_pa
         picker = app.screen
         assert isinstance(picker, AgentPicker)
         assert picker.pinned == []
+        assert "Start pinned" not in app.screen_text()  # nothing pinned: no number keys
         _highlight(picker, "goose")
         await pilot.press("p")
         await pilot.pause(0.1)
         assert app.settings.pinned_agents == ["goose"]
         assert option_ids(picker)[0] == "goose"
+        await pilot.pause(0.1)
+        assert "Start pinned" in app.screen_text()
         assert picker.query_one("#agents", OptionList).highlighted == 0  # still on goose
         saved = config.read_text(encoding="utf-8")
         assert 'pinned_agents = ["goose"]' in saved
