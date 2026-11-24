@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import shlex
+import time
 from typing import TYPE_CHECKING, ClassVar
 
 from textual.app import SuspendNotSupported
@@ -18,13 +19,17 @@ from textual.content import Content
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
+from acptui.probe import ProbeResults, probe
 from acptui.ui.screens.dialogs import DIALOG_CSS
 
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from textual.app import App, ComposeResult
 
     from acptui.config import AgentSpec
+    from acptui.probe import ProbeResult
 
 
 V2_TEXT = {
@@ -66,12 +71,17 @@ class AgentDetailsScreen(ModalScreen[str | None]):
         Binding("i", "install", "Install"),
         Binding("l", "login", "Log in"),
         Binding("o", "homepage", "Homepage"),
+        Binding("t", "test_v2", "Test ACP v2"),
     ]
 
-    def __init__(self, spec: AgentSpec) -> None:
+    def __init__(self, spec: AgentSpec, cwd: Path, probe: ProbeResult | None = None) -> None:
         super().__init__()
         self.spec = spec
+        self.cwd = cwd
+        self.probe = probe
+        """The last "Test v2" result for this agent, if any."""
         self.installed = False
+        self.tested = False
 
     def compose(self) -> ComposeResult:
         spec = self.spec
@@ -96,6 +106,7 @@ class AgentDetailsScreen(ModalScreen[str | None]):
             if spec.login:
                 lines.append(Content.assemble(("log in: ", "$text-muted"), f"$ {spec.login}"))
             yield Static(Content("\n").join(lines), classes="detail")
+            yield Static(self._probe_text(), id="probe", classes="detail")
             with Horizontal(id="actions"):
                 yield Button("Start (s)", id="start", variant="primary", compact=True)
                 if spec.install:
@@ -104,18 +115,37 @@ class AgentDetailsScreen(ModalScreen[str | None]):
                     yield Button("Log in (l)", id="login", compact=True)
                 if spec.homepage:
                     yield Button("Homepage (o)", id="homepage", compact=True)
+                yield Button("Test v2 (t)", id="test_v2", compact=True)
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id:
             await self.run_action(event.button.id)
+
+    def _probe_text(self) -> Content:
+        probe = self.probe
+        if probe is None:
+            return Content("tested: not yet (t runs initialize once)").stylize("$text-muted")
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(probe.time))
+        style = "$text-success" if probe.v2 else "$text-warning"
+        return Content.assemble(("tested: ", "$text-muted"), (probe.summary, style), f"  ({when})")
+
+    async def action_test_v2(self) -> None:
+        """Run ``initialize`` once against the agent and show the protocol it negotiated."""
+        panel = self.query_one("#probe", Static)
+        panel.update(Content(f"testing {self.spec.target} …").stylize("$text-muted"))
+        result = await probe(self.spec, self.cwd)
+        ProbeResults().save(result)
+        self.probe = result
+        self.tested = True
+        panel.update(self._probe_text())
 
     def action_start(self) -> None:
         """Start a session with the agent."""
         self.dismiss("start")
 
     def action_close(self) -> None:
-        """Close (``installed`` if something was installed meanwhile)."""
-        self.dismiss("installed" if self.installed else None)
+        """Close (``installed`` / ``tested`` if the picker should refresh)."""
+        self.dismiss("installed" if self.installed else "tested" if self.tested else None)
 
     def action_homepage(self) -> None:
         """Open the agent's homepage in the browser."""

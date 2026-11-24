@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from textual.widgets import OptionList
 
 from acptui.cli import main
-from acptui.config import BUILTIN_AGENTS, Settings
+from acptui.config import BUILTIN_AGENTS, AgentSpec, Settings
 from acptui.ui.app import AcpTui
 from acptui.ui.screens import agent as agent_module
 from acptui.ui.screens.agent import AgentDetailsScreen
@@ -93,3 +93,49 @@ async def test_install_without_a_terminal_says_so(workdir: Path) -> None:
         await pilot.pause(0.2)
         assert isinstance(app.screen, AgentDetailsScreen)
         assert any("Run it in a terminal" in str(n.message) for n in app._notifications)
+
+
+async def test_probe_v2_and_v1(demo_spec: AgentSpec, v1_spec: AgentSpec, workdir: Path) -> None:
+    from acptui.probe import probe
+
+    ok = await probe(demo_spec, workdir)
+    assert ok.v2
+    assert ok.version == "2"
+    assert "Demo" in ok.agent
+    old = await probe(v1_spec, workdir)
+    assert not old.v2
+    assert old.version == "1"
+    assert old.summary == "speaks ACP v1, not v2"
+    gone = await probe(AgentSpec(id="x", name="X", command=("acptui-no-such-agent",)), workdir)
+    assert not gone.v2
+    assert gone.version == ""
+    assert gone.summary.startswith("test failed:")
+
+
+async def test_test_v2_in_the_details_is_remembered(v1_spec: AgentSpec, workdir: Path) -> None:
+    from acptui.config import UserAgent
+    from acptui.probe import ProbeResults
+
+    command = list(v1_spec.command)
+    settings = Settings(agents={"old": UserAgent(name="Old agent", command=command)})
+    app = AcpTui(settings, workdir)
+    async with app.run_test(size=SIZE) as pilot:
+        picker = app.screen
+        assert isinstance(picker, AgentPicker)
+        _highlight(picker, "old")
+        await pilot.press("i")
+        assert "tested: not yet" in app.screen_text()
+        await pilot.press("t")
+        await until(pilot, lambda: "speaks ACP v1, not v2" in app.screen_text())
+        assert not ProbeResults().load()["old"].v2
+        await pilot.press("escape")
+        assert app.screen is picker
+        old = next(spec for spec in picker.agents if spec.id == "old")
+        assert old.acp_v2 is False  # remembered: the picker shows "no ACP v2 yet"
+        assert "no ACP v2 yet" in app.screen_text()
+
+    again = AcpTui(settings, workdir)
+    async with again.run_test(size=SIZE):
+        picker = again.screen
+        assert isinstance(picker, AgentPicker)
+        assert next(spec for spec in picker.agents if spec.id == "old").acp_v2 is False

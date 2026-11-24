@@ -23,6 +23,20 @@ if TYPE_CHECKING:
     from acptui.recent import RecentSession
 
 
+def with_probes(agents: list[AgentSpec]) -> list[AgentSpec]:
+    """The agents, with ``acp_v2`` from the user's "Test v2" results where there is one."""
+    from acptui.probe import ProbeResults
+
+    results = ProbeResults().load()
+    tested: list[AgentSpec] = []
+    for spec in agents:
+        result = results.get(spec.id)
+        if result is not None and result.version and result.v2 != spec.acp_v2:
+            spec = spec.model_copy(update={"acp_v2": result.v2})
+        tested.append(spec)
+    return tested
+
+
 def agent_option(spec: AgentSpec) -> Option:
     """The picker entry of an agent."""
     available = spec.available
@@ -87,7 +101,7 @@ class AgentPicker(Screen[None]):
 
     def __init__(self, agents: list[AgentSpec], cwd: str) -> None:
         super().__init__()
-        self.agents = agents
+        self.agents = with_probes(agents)
         self.cwd = cwd
 
     def compose(self) -> ComposeResult:
@@ -182,13 +196,18 @@ class AgentPicker(Screen[None]):
         def chosen(action: str | None) -> None:
             if action == "start":
                 self.post_message(self.Picked(spec, self.cwd))
-            elif action == "installed":
+            elif action in {"installed", "tested"}:
                 self.refresh_agents()
 
-        self.app.push_screen(AgentDetailsScreen(spec), callback=chosen)
+        from acptui.probe import ProbeResults
+
+        known = ProbeResults().load().get(spec.id)
+        screen = AgentDetailsScreen(spec, Path(self.cwd), known)
+        self.app.push_screen(screen, callback=chosen)
 
     def refresh_agents(self) -> None:
-        """Re-check which agents are installed."""
+        """Re-check which agents are installed and what tests found."""
+        self.agents = with_probes(self.agents)
         options = self.query_one("#agents", OptionList)
         highlighted = options.highlighted
         options.clear_options()

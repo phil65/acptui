@@ -148,6 +148,8 @@ settings screen, history, recent sessions, the fuzzy file search and the export.
 - **Notifications**: desktop-notifier (native D-Bus / macOS / WinRT) with the `notify`
   extra, else `notify-send` / `osascript`, terminal notifications over SSH; a steady `●` in the title
   instead of blinking.
+- **ACP v2 support of toad's agents** is not probed automatically (that would launch
+  foreign programs); `t` in the agent details tests one on request and remembers it.
 - **No network calls of its own**: no update check, no statistics; images are never
   fetched from URIs; install commands run only when you pick them, shown first.
 - **Auto copy** is off by default (it would overwrite the clipboard on every selection).

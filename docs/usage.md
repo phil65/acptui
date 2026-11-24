@@ -30,7 +30,9 @@ commands an agent offers, without starting the UI.
 
 In the picker, `i` shows the highlighted agent's details: what it is, its command,
 whether it speaks ACP v2, and actions to install it and to log in (they run in the
-terminal, acptui steps aside meanwhile). `d` changes the project directory, `c` takes
+terminal, acptui steps aside meanwhile). `t` tests the agent: acptui starts it once,
+runs `initialize` (no session) and shows the protocol version it negotiated; the picker
+remembers the result. acptui never starts an agent on its own to find out. `d` changes the project directory, `c` takes
 a command or URL of an agent that is not listed, and `r` lists recent sessions of every
 agent and directory, to resume one in a new tab.
 

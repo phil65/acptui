@@ -35,6 +35,7 @@ def _fast_demo(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPat
     history = tmp_path_factory.mktemp("history") / "history.jsonl"
     monkeypatch.setenv("ACPTUI_HISTORY", str(history))
     monkeypatch.setenv("ACPTUI_SESSIONS", str(history.with_name("sessions.jsonl")))
+    monkeypatch.setenv("ACPTUI_PROBES", str(history.with_name("agent_versions.json")))
 
 
 @pytest.fixture
