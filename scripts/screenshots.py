@@ -9,6 +9,7 @@ import asyncio
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 
 from acptui.config import BUILTIN_AGENTS, Settings
@@ -23,6 +24,16 @@ from acptui.ui.widgets.image import ImageView
 
 
 OUT = Path(__file__).parent.parent / "docs" / "images"
+
+
+def _save(app: AcpTui, name: str) -> None:
+    """Save a screenshot without machine-specific paths (the demo agent's interpreter)."""
+    app.save_screenshot(name, str(OUT))
+    path = OUT / name
+    svg = path.read_text(encoding="utf-8")
+    path.write_text(svg.replace(sys.executable, "python"), encoding="utf-8")
+
+
 SIZE = (100, 36)
 PROJECT_README = "# my-project\n\nA small example project.\n"
 
@@ -130,7 +141,7 @@ async def picker_shot(project: Path) -> None:
     app = AcpTui(Settings(theme="tokyo-night"), project)
     async with app.run_test(size=SIZE) as pilot:
         await pilot.pause(0.5)
-        app.save_screenshot("picker.svg", str(OUT))
+        _save(app, "picker.svg")
 
 
 async def launcher_shot(project: Path) -> None:
@@ -139,7 +150,7 @@ async def launcher_shot(project: Path) -> None:
     app = AcpTui(settings, project)
     async with app.run_test(size=SIZE) as pilot:
         await pilot.pause(0.5)
-        app.save_screenshot("launcher.svg", str(OUT))
+        _save(app, "launcher.svg")
 
 
 def main() -> None:
