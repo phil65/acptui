@@ -25,7 +25,7 @@ from acptui.ui.widgets.terminal import TerminalView
 if TYPE_CHECKING:
     from textual.widget import Widget
 
-    from acptui.config import DiffViewMode
+    from acptui.config import DiffViewMode, ToolExpand
     from acptui.protocol.state import Change, Entry, SessionField, SessionState
     from acptui.ui.agent_log import AgentLog
 
@@ -83,12 +83,14 @@ class ConversationView(VerticalScroll):
         *,
         diff_mode: DiffViewMode = "auto",
         expand_thoughts: bool = False,
+        tool_expand: ToolExpand = "auto",
         id: str | None = None,  # noqa: A002 - Textual's name
     ) -> None:
         super().__init__(id=id)
         self.agent_log = agent_log
         self.diff_mode: DiffViewMode = diff_mode
         self.expand_thoughts = expand_thoughts
+        self.tool_expand: ToolExpand = tool_expand
         self.state: SessionState | None = None
         self._views: dict[Entry, Widget] = {}
         self.block_cursor: Widget | None = None
@@ -143,7 +145,13 @@ class ConversationView(VerticalScroll):
             case EntryAdded(entry=entry):
                 if entry in self._views:
                     return
-                view = make_view(entry, state, self.diff_mode, expand_thoughts=self.expand_thoughts)
+                view = make_view(
+                    entry,
+                    state,
+                    self.diff_mode,
+                    expand_thoughts=self.expand_thoughts,
+                    tool_expand=self.tool_expand,
+                )
                 self._views[entry] = view
                 await self.mount(view)
             case EntryChanged(entry=entry):

@@ -91,7 +91,7 @@ if TYPE_CHECKING:
     from textual.timer import Timer
     from textual.widget import Widget
 
-    from acptui.config import AgentSpec, DiffViewMode
+    from acptui.config import AgentSpec, DiffViewMode, ToolExpand
     from acptui.history import History
     from acptui.protocol.state import SessionActivity
     from acptui.recent import RecentSessions
@@ -193,6 +193,7 @@ class SubagentScreen(Screen[None]):
             self.parent_screen.agent_log,
             diff_mode=self.parent_screen.diff_mode,
             expand_thoughts=self.parent_screen.expand_thoughts,
+            tool_expand=self.parent_screen.tool_expand,
         )
         yield Footer(compact=True)
 
@@ -253,6 +254,7 @@ class SessionScreen(Screen[None]):
         *,
         diff_mode: DiffViewMode = "auto",
         expand_thoughts: bool = False,
+        tool_expand: ToolExpand = "auto",
         resume_id: str | None = None,
         setup: SessionSetup | None = None,
         mounts: Mapping[str, str] | None = None,
@@ -277,6 +279,7 @@ class SessionScreen(Screen[None]):
         self.agent_log = agent_log
         self.diff_mode: DiffViewMode = diff_mode
         self.expand_thoughts = expand_thoughts
+        self.tool_expand: ToolExpand = tool_expand
         self.resume_id = resume_id
         self.setup = setup or SessionSetup()
         self.connection: AgentConnection | None = None
@@ -346,6 +349,7 @@ class SessionScreen(Screen[None]):
             self.agent_log,
             diff_mode=self.diff_mode,
             expand_thoughts=self.expand_thoughts,
+            tool_expand=self.tool_expand,
             id="conversation",
         )
         completion_list = CompletionList()

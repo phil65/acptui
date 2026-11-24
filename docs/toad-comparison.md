@@ -57,7 +57,7 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | --- | --- | --- |
 | Streaming Markdown (fences, tables) | yes | yes |
 | Thoughts (setting to show them) | collapsible, `expand_thoughts` | yes |
-| Tool calls (expand policy setting: never / always / success / fail) | expand by kind and content; `enter` toggles | partly: planned (setting) |
+| Tool calls (expand policy setting: never / always / success / fail) | `tool_expand`: auto (by kind and content) / always / never / failed; `enter` toggles | yes (no "success only": a successful call is not more interesting than a running one) |
 | Diffs: unified / split / auto, syntax highlighted | yes, `ctrl+d`, `diff_view` | yes |
 | Diff annotations (`+`/`-`), wrap setting | — | planned |
 | Plans (sidebar and inline) | inline plan block | partly |
@@ -107,12 +107,12 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 
 | toad | acptui | Status |
 | --- | --- | --- |
-| Settings screen (edit in the app) | `config.toml` | planned |
+| Settings screen (edit in the app) | `f3`: display and notification settings, applied at once where possible and saved into `config.toml` with its comments kept; agents and MCP servers stay in the file | yes |
 | Theme | `theme` (and Textual's palette theme switcher) | yes |
 | Prompt placeholder, compact input, footer, info bar, status line toggles | — | planned (a few) |
 | Column mode (fixed width) | — | planned |
 | Scrollbar size | — | no: Textual default |
-| Auto copy on selection | — | planned |
+| Auto copy on selection | `auto_copy` (off by default: it overwrites the clipboard on every selection) | yes |
 | pyperclip clipboard fallback | OSC 52 (Textual) | no: OSC 52 works in most terminals |
 | Sidebar: plan and project tree | files panel (`ctrl+b`) with markers; plan inline | partly |
 | Help panel (`f1`) | `f1` help | yes |

@@ -188,7 +188,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             system_prompt=options.system_prompt,
             system_prompt_mode=options.system_prompt_mode,
         )
-    AcpTui(settings, cwd, spec, resume_id=resume, setup=setup).run()
+    AcpTui(settings, cwd, spec, resume_id=resume, setup=setup, config_file=options.config).run()
 
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})

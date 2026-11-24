@@ -715,6 +715,7 @@ A terminal UI for AI coding agents speaking **ACP v2**.
 | `alt+left` / `alt+right` | Previous / next tab |
 | `alt+w` | Close the tab (stops its agent) |
 | `ctrl+s` | All sessions (tabs) and what they are doing |
+| `f3` | Settings (saved to config.toml) |
 | `ctrl+p` | Command palette |
 | `f5` | Restart the agent |
 | `ctrl+b` | Files panel; `a` mentions the highlighted node |

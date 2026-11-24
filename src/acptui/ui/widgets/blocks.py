@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from textual.widget import Widget
     from textual.widgets.markdown import MarkdownStream
 
-    from acptui.config import DiffViewMode
+    from acptui.config import DiffViewMode, ToolExpand
     from acptui.protocol.state import Entry, SessionState
 
 
@@ -370,8 +370,15 @@ class ToolCallView(Vertical):
             super().__init__()
             self.tool_call_id = tool_call_id
 
-    def __init__(self, entry: ToolCallEntry, state: SessionState, diff_mode: DiffViewMode) -> None:
+    def __init__(
+        self,
+        entry: ToolCallEntry,
+        state: SessionState,
+        diff_mode: DiffViewMode,
+        expand: ToolExpand = "auto",
+    ) -> None:
         super().__init__()
+        self.expand_policy: ToolExpand = expand
         self.entry = entry
         self.state = state
         self.diff_mode: DiffViewMode = diff_mode
@@ -381,6 +388,15 @@ class ToolCallView(Vertical):
         self.set_reactive(ToolCallView.expanded, self._should_expand())
 
     def _should_expand(self) -> bool:
+        match self.expand_policy:
+            case "always":
+                return True
+            case "never":
+                return False
+            case "failed":
+                return self.entry.status == "failed"
+            case _:
+                pass
         if not self.entry.content:
             return True
         has_rich = any(isinstance(item, Diff | Terminal) for item in self.entry.content)
@@ -749,7 +765,12 @@ class SubagentView(Vertical, can_focus=True):
 
 
 def make_view(  # noqa: PLR0911
-    entry: Entry, state: SessionState, diff_mode: DiffViewMode, *, expand_thoughts: bool
+    entry: Entry,
+    state: SessionState,
+    diff_mode: DiffViewMode,
+    *,
+    expand_thoughts: bool,
+    tool_expand: ToolExpand = "auto",
 ) -> Widget:
     """The widget for a timeline entry."""
     match entry:
@@ -762,7 +783,7 @@ def make_view(  # noqa: PLR0911
         case MessageEntry():
             return AgentMessageView(entry, state.cwd)
         case ToolCallEntry():
-            return ToolCallView(entry, state, diff_mode)
+            return ToolCallView(entry, state, diff_mode, tool_expand)
         case PlanEntry():
             return PlanView(entry)
         case NoticeEntry():

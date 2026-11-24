@@ -75,6 +75,7 @@ the account, background work, mode and model, the context window and the cost.
 | `ctrl+p` | Command palette: everything above, login / logout, providers, option values |
 | `f5` | Restart the agent |
 | `f1` | Help |
+| `f3` | Settings: change them in the app (saved to `config.toml`, comments kept) |
 | `ctrl+b` | Files panel: the workspace and mounts as a tree (see Files) |
 | `!` / `$` | On an empty prompt: shell mode (see Shell mode); `esc` goes back |
 | `ctrl+g` | Drop the shell output waiting for the next prompt |
@@ -232,6 +233,8 @@ default_agent = "codex"
 theme = "tokyo-night"              # any Textual theme
 diff_view = "auto"                 # unified, split or auto (split from 120 columns)
 expand_thoughts = false
+tool_expand = "auto"               # auto (by kind), always, never, failed
+auto_copy = false                  # copy text as soon as it is selected
 history = true                     # prompt history and recent sessions, across sessions
 tabs = "multiple"                  # tab bar: always, multiple (tabs), never
 images = "auto"                    # auto, tgp (kitty), sixel, halfcell, unicode or off

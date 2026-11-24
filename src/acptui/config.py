@@ -37,6 +37,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 DiffViewMode = Literal["unified", "split", "auto"]
 """How diffs are shown: one column, side by side, or side by side when wide enough."""
 
+ToolExpand = Literal["auto", "always", "never", "failed"]
+"""Which tool calls start expanded."""
+
 ImageMode = Literal["auto", "tgp", "sixel", "halfcell", "unicode", "off"]
 """How images are drawn: the best the terminal supports (``auto``), one way, or not at all."""
 
@@ -478,6 +481,13 @@ class Settings(BaseModel):
 
     tabs: Literal["always", "multiple", "never"] = "multiple"
     """When to show the session tab bar: always, when there are several tabs, never."""
+
+    tool_expand: ToolExpand = "auto"
+    """Which tool calls start expanded: ``auto`` (by kind: diffs and terminals open, reads
+    and searches closed), ``always``, ``never``, or ``failed`` ones only."""
+
+    auto_copy: bool = False
+    """Copy text to the clipboard as soon as you select it with the mouse."""
 
     images: ImageMode = "auto"
     """How images are drawn: ``auto`` (the best the terminal supports), ``tgp`` (kitty),

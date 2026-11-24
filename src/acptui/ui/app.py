@@ -21,7 +21,7 @@ from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.markup import escape
 
-from acptui.config import command_spec, url_spec
+from acptui.config import command_spec, config_path, url_spec
 from acptui.history import History
 from acptui.notify import (
     desktop_notify,
@@ -43,6 +43,7 @@ from acptui.ui.screens.dialogs import (
 )
 from acptui.ui.screens.picker import AgentPicker
 from acptui.ui.screens.session import SessionScreen
+from acptui.ui.screens.settings import SettingsChanged, SettingsScreen
 from acptui.ui.widgets.image import prepare as prepare_images
 from acptui.ui.widgets.tabs import SessionTabs, TabInfo
 
@@ -98,6 +99,11 @@ def session_commands(screen: SessionScreen) -> Iterator[tuple[str, str, Callable
     yield "Agent log", "stderr and protocol traffic", screen.action_show_log
     yield "Restart agent", "Restart the agent process", screen.action_restart
     yield "Help", "Keys and tips", screen.action_help
+    yield (
+        "Settings",
+        "Theme, diffs, tabs, notifications, ... (f3)",
+        partial(screen.app.run_action, "settings"),
+    )
     state = screen.state
     if state is not None:
         for option in state.config_options:
@@ -168,6 +174,7 @@ class AcpTui(App[None]):
         Binding("alt+right", "next_tab(1)", "Next tab", show=False),
         Binding("alt+left", "next_tab(-1)", "Previous tab", show=False),
         Binding("ctrl+s", "sessions", "Tabs", show=False),
+        Binding("f3", "settings", "Settings", show=False),
         Binding("f12", "screenshot", "Screenshot", show=False),
     ]
     CSS = """
@@ -182,8 +189,11 @@ class AcpTui(App[None]):
         *,
         resume_id: str | None = None,
         setup: SessionSetup | None = None,
+        config_file: Path | None = None,
     ) -> None:
         super().__init__()
+        self.config_file = config_file or config_path()
+        """Where the settings screen saves changes."""
         self.setup_override = setup
         self.settings = settings
         self.cwd = cwd
@@ -346,6 +356,7 @@ class AcpTui(App[None]):
             AgentLog(),
             diff_mode=self.settings.diff_view,
             expand_thoughts=self.settings.expand_thoughts,
+            tool_expand=self.settings.tool_expand,
             resume_id=resume_id,
             setup=setup or build_setup(self.settings, spec),
             mounts=self.settings.mounts,
@@ -456,6 +467,41 @@ class AcpTui(App[None]):
     def on_agent_picker_picked(self, message: AgentPicker.Picked) -> None:
         self.spec = message.spec
         self.open_tab(message.spec, Path(message.cwd) if message.cwd else None)
+
+    # --- Settings ---------------------------------------------------------------------
+
+    def action_settings(self) -> None:
+        """Change settings (saved to config.toml)."""
+        self.push_screen(
+            SettingsScreen(self.settings, self.config_file, sorted(self.available_themes))
+        )
+
+    def on_settings_changed(self, message: SettingsChanged) -> None:
+        """Apply a changed setting where it can be applied right away."""
+        self.settings = message.settings
+        match message.key:
+            case "theme" if self.settings.theme in self.available_themes:
+                self.theme = self.settings.theme
+            case "diff_view":
+                for screen in self.tabs.values():
+                    screen.diff_mode = self.settings.diff_view
+                    if screen.is_mounted:
+                        screen.conversation.set_diff_mode(self.settings.diff_view)
+            case "expand_thoughts":
+                for screen in self.tabs.values():
+                    screen.expand_thoughts = self.settings.expand_thoughts
+            case "tabs":
+                self.refresh_tabs()
+            case "notifications.title":
+                self._terminal_title = ""
+                self.refresh_title()
+            case _:
+                pass
+
+    def on_text_selected(self) -> None:
+        """Copy selected text right away (``auto_copy``)."""
+        if self.settings.auto_copy and (text := self.screen.get_selected_text()):
+            self.copy_to_clipboard(text)
 
     def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
         """Open a link the user clicked in agent Markdown.
