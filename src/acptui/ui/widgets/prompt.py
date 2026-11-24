@@ -25,12 +25,15 @@ if TYPE_CHECKING:
 
 def completion_prompt(completion: Completion) -> Content:
     """The list entry of a candidate: its label and its (Markdown or plain) detail."""
+    label = Content(completion.label).stylize("bold")
+    for position in completion.highlights:
+        label = label.stylize("$text-accent underline", position, position + 1)
     if not completion.detail:
-        return Content(completion.label).stylize("bold")
+        return label
     detail = (
         summary_markdown(completion.detail) if completion.markdown else Content(completion.detail)
     )
-    return Content.assemble((completion.label, "bold"), "  ", detail.stylize_before("$text-muted"))
+    return Content.assemble(label, "  ", detail.stylize_before("$text-muted"))
 
 
 class CompletionList(OptionList):

@@ -152,7 +152,14 @@ text files are embedded when the agent accepts embedded context, images and audi
 attached when it accepts them, anything else is sent as a resource link. Escape spaces
 in paths with a backslash (`@my\ file.txt`); the completion does that for you. After
 the entries of the directory you are in, the completion lists fuzzy matches from the
-whole workspace: `@convview` finds `src/ui/conversation_view.py`.
+whole workspace, matched characters highlighted: `@convview` finds
+`src/ui/conversation_view.py`, `@conectors` (a typo) still finds `connectors.py`, and
+`@ui/app` prefers files under `ui/`. The file name counts most (`@tuiapp` ranks
+`tui/app.py` above long names that merely contain "tui_app"). The workspace is listed
+the way ripgrep sees it (`.gitignore` applies, hidden files are left out) with
+[ripgrep-rs](https://pypi.org/project/ripgrep-rs/), and matched with
+[frizbee](https://github.com/saghen/frizbee) (SIMD Smith-Waterman), whose query
+syntax works too: `@^src` (prefix), `@.toml$` (suffix), `@'exact` (substring).
 
 ## Shell mode
 

@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import heapq
 import os
-from pathlib import Path
 import re
 import time
 from typing import TYPE_CHECKING, Literal
 
 from aclientp.schema.v2 import Command, Skill, TextCommandInput
 from aclientp.schema.v2.base import is_set
+import frizbee
+import ripgrep_rs
 
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from aclientp.schema.v2 import AvailableCommand
+    from frizbee import MatchIndices
 
 
 IGNORED_DIRS = frozenset({
@@ -62,6 +66,9 @@ class Completion:
     markdown: bool = False
     """Whether ``detail`` is Markdown (command and skill descriptions are, in ACP v2)."""
 
+    highlights: tuple[int, ...] = ()
+    """Indices of ``label`` characters to highlight (what a fuzzy search matched)."""
+
 
 def completion_context(line: str, row: int) -> CompletionContext | None:
     """The completion context for the text before the cursor in line ``row``."""
@@ -105,87 +112,144 @@ def _escape(path: str) -> str:
     return path.replace(" ", "\\ ")
 
 
-MAX_INDEXED_FILES = 20_000
-"""The fuzzy file search looks at no more files than this."""
+MAX_INDEXED_FILES = 100_000
+"""Upper bound of the fuzzy file index (a huge tree must not stall the prompt)."""
 
 INDEX_TTL = 10.0
-"""Seconds a file index is reused before the workspace is walked again."""
+"""Seconds a file index is reused before the workspace is listed again."""
 
-_indexes: dict[Path, tuple[float, list[str]]] = {}
+NAME_BONUS = 24
+"""How much matched characters in the file name count (see :func:`fuzzy_paths`)."""
 
 
-def file_index(cwd: Path) -> list[str]:
-    """Workspace-relative paths of the files under ``cwd``, cached for a while.
+@dataclass
+class FileIndex:
+    """The workspace files for the fuzzy search, kept in Rust memory for frizbee."""
 
-    Ignored and hidden folders are left out; the index lives :data:`INDEX_TTL` seconds.
+    root: Path
+    paths: list[str]
+    """Workspace-relative, ``/``-separated."""
+    name_starts: list[int]
+    """Where each path's file name starts."""
+    stem_lengths: list[int]
+    """Length of each file name without its extension (at least 1)."""
+    haystacks: frizbee.Haystacks
+    built: float
+
+
+_indexes: dict[Path, FileIndex] = {}
+_matcher = frizbee.Matcher("")
+"""One matcher for every query: frizbee compiles a pattern once and reuses its memory."""
+
+
+def list_files(root: Path, limit: int = MAX_INDEXED_FILES) -> list[str]:
+    """The files under ``root`` the way ripgrep sees them.
+
+    ``.gitignore`` (and ``.ignore``) rules apply, hidden files are left out, and so are
+    :data:`IGNORED_DIRS` (also outside a git repository).
     """
+    paths = ripgrep_rs.files(
+        paths=[str(root)],
+        relative_to=str(root),
+        glob_not=sorted(IGNORED_DIRS),
+        max_count=limit,
+    )
+    return [path.replace("\\", "/") for path in paths]
+
+
+def _stem_length(name: str) -> int:
+    dot = name.rfind(".")
+    return max(dot if dot > 0 else len(name), 1)
+
+
+def file_index(cwd: Path, *, refresh: bool = False) -> FileIndex:
+    """The fuzzy file index of ``cwd``, cached for :data:`INDEX_TTL` seconds."""
     root = cwd.resolve()
     cached = _indexes.get(root)
     now = time.monotonic()
-    if cached is not None and now - cached[0] < INDEX_TTL:
-        return cached[1]
-    paths: list[str] = []
-    for directory, dirs, files in os.walk(root):
-        dirs[:] = sorted(d for d in dirs if d not in IGNORED_DIRS and not d.startswith("."))
-        base = Path(directory).relative_to(root)
-        paths.extend((base / name).as_posix() for name in sorted(files))
-        if len(paths) >= MAX_INDEXED_FILES:
-            break
-    _indexes[root] = (now, paths[:MAX_INDEXED_FILES])
-    return _indexes[root][1]
+    if cached is not None and not refresh and now - cached.built < INDEX_TTL:
+        return cached
+    paths = list_files(root)
+    starts = [path.rfind("/") + 1 for path in paths]
+    index = FileIndex(
+        root,
+        paths,
+        starts,
+        [_stem_length(path[start:]) for path, start in zip(paths, starts, strict=True)],
+        frizbee.Haystacks(paths),
+        now,
+    )
+    _indexes[root] = index
+    return index
 
 
-def fuzzy_score(query: str, path: str) -> float | None:
-    """How well ``query`` matches ``path`` as a subsequence (``None``: not at all).
+@dataclass(frozen=True)
+class FuzzyMatch:
+    """A file the fuzzy search found."""
 
-    Matches in the file name, at word starts and in runs score higher; long paths a bit
-    lower.
+    path: str
+    score: float
+    positions: tuple[int, ...]
+    """Indices of the matched characters in ``path``, ascending (for highlighting)."""
+
+
+def max_typos(query: str) -> int:
+    """Typos the search forgives: none in short queries, then one, then two."""
+    return 0 if len(query) < 7 else 1 if len(query) < 12 else 2  # noqa: PLR2004
+
+
+def fuzzy_paths(query: str, cwd: Path, limit: int = MAX_PATH_COMPLETIONS) -> list[FuzzyMatch]:
+    """The workspace files that match ``query`` best (after toad's file picker).
+
+    frizbee (Smith-Waterman, SIMD) scores the whole path, with a few typos forgiven and
+    its query syntax (``^prefix``, ``suffix$``, ``'substring``, ``!not``). The file name
+    counts most: matched characters that fall into the file name add a bonus that grows
+    with how much of the name they cover, so ``tuiapp`` finds ``tui/app.py`` before
+    ``tui_app/snapshots/long_name.snap``.
     """
-    lowered = path.lower()
-    name_start = lowered.rfind("/") + 1
-    score = 0.0
-    position = 0
-    previous = -2
-    for char in query.lower():
-        index = lowered.find(char, position)
-        if index < 0:
-            return None
-        score += 1.0
-        if index == previous + 1:
-            score += 2.0  # a run
-        if index == 0 or lowered[index - 1] in "/_-. ":
-            score += 1.5  # a word start
-        if index >= name_start:
-            score += 1.0  # in the file name
-        previous = index
-        position = index + 1
-    return score - len(path) / 100
-
-
-def fuzzy_paths(query: str, cwd: Path, limit: int = MAX_PATH_COMPLETIONS) -> list[str]:
-    """The workspace files that match ``query`` best (fuzzy, after toad's file picker)."""
-    scored = [
-        (score, path) for path in file_index(cwd) if (score := fuzzy_score(query, path)) is not None
+    index = file_index(cwd)
+    if not query or not index.paths:
+        return []
+    _matcher.set_config(max_typos=max_typos(query))
+    _matcher.set_patterns(frizbee.Pattern.from_query(query))
+    starts, stems, weight = index.name_starts, index.stem_lengths, NAME_BONUS / len(query)
+    scored: list[tuple[float, int, MatchIndices]] = []
+    for match in _matcher.match_list_indices(index.haystacks):
+        i = match.index
+        start = starts[i]
+        in_name = 0
+        for position in match.indices:  # descending: the file name's matches come first
+            if position < start:
+                break
+            in_name += 1
+        cover = in_name / stems[i] if in_name < stems[i] else 1.0
+        scored.append((
+            match.score + weight * in_name * in_name * cover,
+            -len(index.paths[i]),
+            match,
+        ))
+    best = heapq.nlargest(limit, scored, key=lambda item: (item[0], item[1]))
+    return [
+        FuzzyMatch(index.paths[m.index], score, tuple(reversed(m.indices))) for score, _, m in best
     ]
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    return [path for _, path in scored[:limit]]
 
 
 def complete_path(token: str, cwd: Path, limit: int = MAX_PATH_COMPLETIONS) -> list[Completion]:
     """Files and directories inside ``cwd`` matching a partial path.
 
-    Entries of the typed directory come first; a name of two characters or more (no
-    ``/`` in it) also finds files anywhere in the workspace by fuzzy search.
+    Entries of the typed directory come first; a token of two characters or more (unless
+    it ends with ``/``: then a directory is browsed) also finds files anywhere in the
+    workspace by fuzzy search, ``ui/app`` too (paths under ``ui/`` rank high).
     """
     direct = _complete_directory(token, cwd, limit)
     raw = token.replace("\\ ", " ")
-    if len(raw) < 2 or "/" in raw:  # noqa: PLR2004
+    if len(raw) < 2 or raw.endswith("/"):  # noqa: PLR2004 - a directory is browsed
         return direct
     seen = {completion.insert for completion in direct}
     fuzzy = [
-        Completion(path, _escape(path), "fuzzy match")
-        for path in fuzzy_paths(raw, cwd, limit)
-        if _escape(path) not in seen
+        Completion(match.path, _escape(match.path), "fuzzy match", highlights=match.positions)
+        for match in fuzzy_paths(raw, cwd, limit)
+        if _escape(match.path) not in seen
     ]
     return (direct + fuzzy)[:limit]
 
