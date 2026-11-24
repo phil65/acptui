@@ -34,6 +34,18 @@ there is no v1 code path. AGPL-3.0-or-later; a few UI pieces are adapted from to
     kind; `diff.py`, `terminal.py`, `prompt.py` (editor + completion), `status.py`.
   - `screens/`: `permission.py`, `elicitation.py`, `dialogs.py` (session list, config,
     fork, rename, confirm, help), `providers.py`, `picker.py`, `log.py`.
+- `src/acptui/ui/app.py` also keeps the **tabs** (one `SessionScreen` per Textual mode,
+  `open_tab` / `close_tab` / `switch_tab`, the picker in mode `picker`), **attention**
+  (`ui/attention.py` messages -> bell, sound, notification via `notify.py`, terminal
+  title), the settings screen (`ui/screens/settings.py`, saved with tomlkit) and link
+  clicks from agent Markdown.
+- `ui/markdown.py`: `AgentMarkdown` (no raw HTML, links bubble to the app) and
+  `inline_markdown` for the v2 Markdown description fields; plain fields stay `Content`.
+- `ui/widgets/image.py`: images via textual-image (probed in `cli.main` before the app
+  starts); `ui/widgets/tabs.py`; `ui/block_actions.py` (block cursor text / SVG);
+  `ui/screens/agent.py` (agent details, install / login in the suspended terminal).
+- `history.py`, `recent.py` (state dir, `ACPTUI_HISTORY` / `ACPTUI_SESSIONS`; tests point
+  them at temp files), `protocol/export.py` (timeline -> Markdown), `notify.py`.
 - `src/acptui/demo.py` + `demo_scripts.py`: scripted v2 agent (`acptui run demo`,
   `python -m acptui.demo`) exercising the whole spec; used by tests and screenshots.
   `ACPTUI_DEMO_DELAY` sets the streaming delay (tests use 0).
@@ -51,6 +63,8 @@ there is no v1 code path. AGPL-3.0-or-later; a few UI pieces are adapted from to
 | Keys / help text | `SessionScreen.BINDINGS`, `ui/screens/dialogs.py` `HELP`, `docs/usage.md` |
 | Spec coverage table | `docs/spec-coverage.md` (keep it in sync with code and tests) |
 | Screenshots | `uv run python scripts/screenshots.py` -> `docs/images/*.svg` |
+| A new setting | `config.py` `Settings`, `FIELDS` in `ui/screens/settings.py`, `on_settings_changed` in `ui/app.py`, `docs/usage.md` |
+| toad feature status | `docs/toad-comparison.md` (keep it in sync) |
 
 ## Commands
 
@@ -74,6 +88,10 @@ uv run acptui run demo        # try it
   handlers in order, and not awaiting keeps that order.
 - Markdown views sync to the full text (`StreamingMarkdown.sync`) instead of appending
   chunks: rendering lags behind the state.
+- Background tabs: a dialog of a tab that is not shown waits for it (`_until_shown`);
+  code that pushes screens for a session must go through `_ask`.
+- Commit hooks run the whole suite (about 4 minutes): commit in the background and do not
+  edit the tree meanwhile (the hook stashes unstaged changes).
 - UI tests use `App.run_test()` with the real demo agent; wait with the `until`
   helper in `tests/test_app.py`, never fixed sleeps alone.
 

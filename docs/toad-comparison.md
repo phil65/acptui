@@ -6,7 +6,7 @@ toad, on ACP **v2** (toad speaks v1). This page is the feature inventory, made f
 toad's default branch (commit `dd4f90e`, May 2026, version 0.6.20): what acptui has,
 what it does differently, and what it leaves out and why.
 
-Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on purpose),
+Status: **yes** (acptui has it), **partly**, **deferred**, **no** (left out on purpose),
 **n/a** (a v1 or toad-only concept). Where acptui adapted toad code, `NOTICE` says so.
 
 ## Command line
@@ -64,7 +64,7 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | Terminals in tool calls | live terminal view (agent-owned in v2) | yes (terminal work by another session) |
 | Images | drawn (kitty graphics, Sixel, half blocks) | yes: toad shows none |
 | Block cursor (`alt+up/down`), block menu: copy, copy to prompt, open as SVG, maximize | `alt+up/down`, then `c` / `p` / `v` / `m` (keys instead of a menu) | yes |
-| Conversation pruning (keep N lines) | — | planned (setting) |
+| Conversation pruning (keep N lines) | `max_blocks` (blocks, not lines; the session and the export keep everything) | yes |
 | `/toad:clear` | `/acptui:clear` | yes |
 | Throbber (thinking animation) | spinner in the status line | yes |
 | Flash messages | Textual toasts | yes |
@@ -131,6 +131,27 @@ aclientp's typed v2 client end to end; see the [coverage table](spec-coverage.md
 
 ## What acptui adapted from toad
 
-See `NOTICE`: the pill and plan widgets, the tool output heuristic, the PTY shell and
-the shell-mode switch (shell mode), and the notification sounds. The tab bar, the
-notifications, image drawing, `acptui serve` and the Markdown handling are new code.
+`NOTICE` lists it: the pill and plan widgets, the tool output heuristic, the PTY shell
+and the shell-mode switch, the notification sounds and the agent list (names, commands,
+install and login commands). Everything else is new code on acptui's v2 layer: tabs,
+notifications, image drawing, `acptui serve`, Markdown handling, the block cursor, the
+settings screen, history, recent sessions, the fuzzy file search and the export.
+
+## Product decisions
+
+- **Keys**: `ctrl+[` is `escape` in most terminals, so tabs switch with `alt+left` /
+  `alt+right`; `ctrl+w` deletes a word in the prompt, so tabs close with `alt+w`.
+- **Tab bar** only from two tabs on by default (`tabs = "multiple"`; toad: always), so a
+  single session looks as before.
+- **Questions from background tabs** wait for their tab (and notify) instead of popping
+  up over the tab you are working in.
+- **Notifications**: desktop notifier commands (`notify-send`, `osascript`) instead of a
+  notification library, terminal notifications over SSH; a steady `●` in the title
+  instead of blinking.
+- **No network calls of its own**: no update check, no statistics; images are never
+  fetched from URIs; install commands run only when you pick them, shown first.
+- **Auto copy** is off by default (it would overwrite the clipboard on every selection).
+- **`acptui serve`** binds to localhost and warns otherwise: textual-serve has no
+  authentication.
+- **Agent HTML** is shown as text, links need a click (and a confirmation unless
+  `http(s)`).

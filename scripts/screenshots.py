@@ -96,6 +96,11 @@ async def session_shots(project: Path) -> None:
         app.save_screenshot("options.svg", str(OUT))
         await pilot.press("escape")
 
+        await pilot.press("f3")
+        await pilot.pause(0.3)
+        app.save_screenshot("settings.svg", str(OUT))
+        await pilot.press("escape")
+
         await pilot.press("ctrl+t")
         app.screen.post_message(AgentPicker.Picked(spec, str(project)))
         await wait(pilot, lambda: len(app.tabs) > 1 and app.screen is not screen)

@@ -225,6 +225,12 @@ are configured from the palette too.
 
 ## Configuration
 
+![The settings screen](images/settings.svg)
+
+`f3` shows the display and notification settings: `enter` changes one, it applies at
+once where it can and is saved into `config.toml` (comments and the other tables are
+kept). Everything else (agents, MCP servers, mounts) is edited in the file:
+
 `config.toml` in the platform config directory (`acptui config` prints the path, the
 `ACPTUI_CONFIG` environment variable overrides it):
 
