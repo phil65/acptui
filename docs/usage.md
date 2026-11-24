@@ -51,7 +51,7 @@ the account, background work, mode and model, the context window and the cost.
 | `/` | Complete the agent's commands and skills |
 | `@` | Complete a path; the file is attached to the prompt |
 | `tab` (empty prompt) | Take the agent's suggested next prompt |
-| `up` / `down` | Prompt history |
+| `up` / `down` | Prompt history (kept across sessions; `history = false` turns that off) |
 | `escape` | Cancel the turn |
 | `shift+tab` | Next mode |
 | `ctrl+o` | Session options: mode, model, thought level, ... |
@@ -224,6 +224,7 @@ default_agent = "codex"
 theme = "tokyo-night"              # any Textual theme
 diff_view = "auto"                 # unified, split or auto (split from 120 columns)
 expand_thoughts = false
+history = true                     # keep the prompt history across sessions
 tabs = "multiple"                  # tab bar: always, multiple (tabs), never
 images = "auto"                    # auto, tgp (kitty), sixel, halfcell, unicode or off
 system_prompt = "Prefer small commits."

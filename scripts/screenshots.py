@@ -121,6 +121,7 @@ async def picker_shot(project: Path) -> None:
 def main() -> None:
     """Write the screenshots."""
     os.environ["ACPTUI_DEMO_DELAY"] = "0.001"
+    os.environ["ACPTUI_HISTORY"] = os.devnull  # no history written, none shown
     OUT.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp())
     project = root / "my-project"

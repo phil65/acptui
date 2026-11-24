@@ -21,6 +21,7 @@ from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.markup import escape
 
+from acptui.history import History
 from acptui.notify import (
     desktop_notify,
     play_sound,
@@ -346,6 +347,7 @@ class AcpTui(App[None]):
             resume_id=resume_id,
             setup=setup or build_setup(self.settings, spec),
             mounts=self.settings.mounts,
+            history=History() if self.settings.history else None,
         )
         screen.tab_id = tab_id
         self.tabs[tab_id] = screen

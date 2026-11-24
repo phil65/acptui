@@ -91,6 +91,7 @@ if TYPE_CHECKING:
     from textual.widget import Widget
 
     from acptui.config import AgentSpec, DiffViewMode
+    from acptui.history import History
     from acptui.protocol.state import SessionActivity
     from acptui.shell import Shell, ShellCommand
     from acptui.ui.agent_log import AgentLog
@@ -253,8 +254,11 @@ class SessionScreen(Screen[None]):
         resume_id: str | None = None,
         setup: SessionSetup | None = None,
         mounts: Mapping[str, str] | None = None,
+        history: History | None = None,
     ) -> None:
         super().__init__()
+        self.history = history
+        """The prompt history file (``None``: history only for this screen)."""
         self.spec = spec
         self.cwd = cwd
         self.files = Files(cwd, mounts)
@@ -365,6 +369,9 @@ class SessionScreen(Screen[None]):
         return self.query_one(StatusBar)
 
     def on_mount(self) -> None:
+        if self.history is not None:
+            self.prompt.prompt_history = self.history.texts(shell=False)
+            self.prompt.shell_history = self.history.texts(shell=True)
         self.status.agent = self.spec.name
         self.status.refresh_status()
         self.prompt.focus()
@@ -764,6 +771,8 @@ class SessionScreen(Screen[None]):
     # --- Prompt ---------------------------------------------------------------------
 
     def on_prompt_input_submitted(self, message: PromptInput.Submitted) -> None:
+        if self.history is not None:
+            self.history.append(message.text, shell=message.shell, cwd=str(self.cwd))
         if not message.shell and message.text.startswith("/acptui:"):
             self.prompt.load_text("")
             name, _, argument = message.text[len("/acptui:") :].partition(" ")

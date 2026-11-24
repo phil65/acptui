@@ -288,6 +288,9 @@ class Settings(BaseModel):
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)
     """When and how to get your attention."""
 
+    history: bool = True
+    """Keep the prompt history across sessions (in the platform state directory)."""
+
     tabs: Literal["always", "multiple", "never"] = "multiple"
     """When to show the session tab bar: always, when there are several tabs, never."""
 

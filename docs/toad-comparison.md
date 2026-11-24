@@ -78,7 +78,7 @@ Status: **yes** (acptui has it), **partly**, **planned**, **no** (left out on pu
 | Markdown syntax highlighting in the prompt | — | planned |
 | `/` command completion with descriptions | yes (descriptions as Markdown) | yes |
 | `@` file mention with fuzzy search over the project, `tab` for a tree | `@` path completion per directory; files panel (`ctrl+b`) | partly: planned (fuzzy search) |
-| History (persistent file) | in memory per session | partly: planned (persistent) |
+| History (persistent file) | persistent (`history.jsonl` in the state directory), prompts and shell commands apart | yes |
 | Mode switcher (`ctrl+o`) | `ctrl+o` options, `shift+tab` next mode | yes |
 | Shell mode (`!`, PTY shell, completion, danger warnings) | shell mode (`!` / `$`) | yes (by another session); danger warnings deferred: terminal work in progress elsewhere |
 | Shell tab completion of paths / commands | — | deferred: terminal work in progress elsewhere |
