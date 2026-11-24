@@ -31,6 +31,17 @@ your terminal: streaming Markdown, tool calls with diffs and live terminals,
 permission prompts, plans, subagents, forms the agent asks you to fill in, session
 history, modes and models.
 
+- **Tabs**: several agents and sessions side by side (`ctrl+t`), each with its own
+  process; the tab bar shows which one works or waits for you.
+- **Images** drawn in the terminal (kitty graphics, Sixel, or half blocks anywhere).
+- **Notifications and sounds** when an agent asks something or finishes while you look
+  elsewhere (desktop or terminal notifications, terminal title).
+- **Shell mode** (`!`): a real shell next to the agent; its output goes with your next
+  prompt.
+- **In the browser**: `acptui serve run claude`.
+- **Markdown where ACP v2 allows it** (command, option, permission, subagent and login
+  descriptions), plain text where it does not; agent HTML is never interpreted.
+
 The protocol layer is [aclientp](https://github.com/phil65/aclientp)'s typed v2
 client; the UI is [Textual](https://textual.textualize.io). In spirit it is close to
 [toad](https://github.com/batrachianai/toad); see [differences](#differences-from-toad).
@@ -58,6 +69,7 @@ acptui connect wss://host/acp            # WebSocket
 acptui run codex --resume SESSION_ID     # resume a session (with history replay)
 acptui -o model=opus -o mode=plan run claude   # initial session options
 acptui --add-dir ../lib --system-prompt "Be terse." run codex
+acptui serve run demo                    # in the browser: http://localhost:8000
 acptui options codex                     # print an agent's options and commands
 acptui agents                            # the registry and what is installed
 ```
@@ -66,8 +78,9 @@ In the app: `enter` sends, `shift+enter` / `ctrl+j` adds a line, `/` completes t
 agent's commands, `@` completes file paths (the files are attached), `escape`
 cancels the turn, `shift+tab` switches the mode, `ctrl+o` shows mode / model /
 other options, `ctrl+n` / `ctrl+r` / `ctrl+f` start, resume and fork sessions,
-`ctrl+l` shows the agent's stderr and the protocol traffic, `ctrl+p` opens the
-command palette (login, providers, everything else) and `f1` the help.
+`ctrl+l` shows the agent's stderr and the protocol traffic, `ctrl+t` opens a new tab,
+`alt+left` / `alt+right` switch tabs, `ctrl+p` opens the command palette (login,
+providers, everything else) and `f1` the help.
 
 ## Supported agents
 
@@ -130,12 +143,17 @@ display-only; acptui renders them live and can cancel them.
 
 ## Differences from toad
 
+acptui aims to have everything good in toad; the
+[comparison](https://phil65.github.io/acptui/toad-comparison/) lists every toad feature
+and where acptui stands.
+
 - **ACP v2 only**, through aclientp's typed models end to end (toad speaks v1 with
   hand-written dicts). No v1 fallback.
 - The full v2 client surface: subagents, elicitation, cursors and forking, providers,
   auth status, session archive / delete / status, prompt suggestions, compactions.
+- Images are drawn; Markdown descriptions follow v2's rules.
 - **Type safe**: `ty` reports nothing, no untyped code paths.
-- Smaller: no shell mode, no agent store, no web serving. A built-in demo agent
+- No telemetry, no update check, no network calls of its own. A built-in demo agent
   shows every feature without an API key.
 
 ## License

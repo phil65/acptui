@@ -16,8 +16,10 @@ from acptui.ui.app import AcpTui
 from acptui.ui.screens.dialogs import ConfigScreen
 from acptui.ui.screens.elicitation import FormElicitationScreen
 from acptui.ui.screens.permission import PermissionScreen
+from acptui.ui.screens.picker import AgentPicker
 from acptui.ui.screens.session import SessionScreen
 from acptui.ui.widgets.blocks import PlanView, SubagentView
+from acptui.ui.widgets.image import ImageView
 
 
 OUT = Path(__file__).parent.parent / "docs" / "images"
@@ -37,7 +39,7 @@ async def wait(pilot: object, condition: object, timeout: float = 20) -> None:
 async def session_shots(project: Path) -> None:
     """Screens of a demo session."""
     spec = next(s for s in BUILTIN_AGENTS if s.id == "demo")
-    app = AcpTui(Settings(theme="tokyo-night"), project, spec)
+    app = AcpTui(Settings(theme="tokyo-night", images="halfcell", tabs="always"), project, spec)
     async with app.run_test(size=SIZE) as pilot:
         await wait(pilot, lambda: isinstance(app.screen, SessionScreen) and bool(app.screen.state))
         screen = app.screen
@@ -80,11 +82,31 @@ async def session_shots(project: Path) -> None:
         await pilot.press("escape")
         await wait(pilot, done)
 
+        await send("/media")
+        await wait(pilot, done)
+        await pilot.pause(0.5)
+        image = screen.query(ImageView).first()
+        screen.conversation.scroll_to_widget(image, animate=False, top=True)
+        await pilot.pause(0.3)
+        app.save_screenshot("images.svg", str(OUT))
+
         await pilot.press("ctrl+o")
         await wait(pilot, lambda: isinstance(app.screen, ConfigScreen))
         await pilot.pause(0.3)
         app.save_screenshot("options.svg", str(OUT))
         await pilot.press("escape")
+
+        await pilot.press("ctrl+t")
+        app.screen.post_message(AgentPicker.Picked(spec, str(project)))
+        await wait(pilot, lambda: len(app.tabs) > 1 and app.screen is not screen)
+        other = app.screen
+        assert isinstance(other, SessionScreen)
+        await wait(pilot, lambda: other.state is not None and other.connected)
+        other.prompt.load_text("/slow")
+        other.prompt.move_cursor(other.prompt.document.end)
+        await pilot.press("enter")
+        await pilot.pause(0.6)
+        app.save_screenshot("tabs.svg", str(OUT))
         await app.action_quit()
 
 

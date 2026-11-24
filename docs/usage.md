@@ -91,6 +91,8 @@ proxy to share it. Images are drawn with half blocks in the browser.
 
 ## Tabs
 
+![Two tabs: one session idle, one working](images/tabs.svg)
+
 Each tab is a session with its own agent process: run Claude Code in one tab and Codex
 in another, or two sessions of one agent in different directories. `ctrl+t` opens the
 agent picker for a new tab (`escape` goes back, `d` changes the project directory);
@@ -111,6 +113,8 @@ SSH or with `method = "terminal"`. The terminal title shows the session and star
 `●` while an agent waits for you. See `[notifications]` in the configuration.
 
 ## Images
+
+![An image from the agent, drawn with half blocks](images/images.svg)
 
 Images the agent sends (in messages and tool output) are drawn in the terminal with the
 best method it supports: the kitty graphics protocol, Sixel, or colored half blocks
