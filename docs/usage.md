@@ -70,6 +70,16 @@ the account, background work, mode and model, the context window and the cost.
 | `f12` | Screenshot: the screen as SVG and as text (Downloads), text copied to the clipboard |
 | `ctrl+q` | Quit |
 
+## Notifications
+
+When the agent asks for permission or input, the terminal bell rings. If you are not
+looking (the terminal is not focused, or the session is in another tab), acptui also
+sends a notification and plays a sound, for questions and when a turn ends: desktop
+notifications (`notify-send`, `osascript`) on a local machine, terminal notifications
+(OSC 777 / 9 / 99: foot, WezTerm, Ghostty, kitty, iTerm2, Windows Terminal, ...) over
+SSH or with `method = "terminal"`. The terminal title shows the session and starts with
+`●` while an agent waits for you. See `[notifications]` in the configuration.
+
 ## Images
 
 Images the agent sends (in messages and tool output) are drawn in the terminal with the
@@ -169,6 +179,13 @@ images = "auto"                    # auto, tgp (kitty), sixel, halfcell, unicode
 system_prompt = "Prefer small commits."
 system_prompt_mode = "append"
 additional_directories = ["~/src/shared"]
+
+[notifications]                    # when the agent asks something or finishes
+when = "unfocused"                 # never, unfocused (or in another tab), always
+method = "auto"                    # auto, terminal (OSC 777/9/99, works over SSH), desktop
+sounds = true
+turn_end = true                    # also when a turn ends, not only for questions
+title = true                       # terminal title: session, ● while the agent waits
 
 [mounts]                           # more folders in the files panel: any fsspec URL
 docs = "github://phil65:agentpool@main/docs"

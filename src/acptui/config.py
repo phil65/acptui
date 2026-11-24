@@ -245,6 +245,29 @@ class McpServerConfig(BaseModel):
         return McpServerStdio(name=self.name, command=resolved, args=self.args, env=env)
 
 
+class NotificationSettings(BaseModel):
+    """``[notifications]``: getting your attention when the agent needs it or is done."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    when: Literal["never", "unfocused", "always"] = "unfocused"
+    """Notify outside the app: never, when the terminal is not focused (or the session is in
+    another tab), or always."""
+
+    method: Literal["auto", "terminal", "desktop"] = "auto"
+    """``terminal`` escape sequences (work over SSH), the ``desktop`` notifier (notify-send,
+    osascript), or ``auto``: the desktop when it is local and has a notifier."""
+
+    sounds: bool = True
+    """Play a sound with the notification."""
+
+    turn_end: bool = True
+    """Notify when a turn ends (not only when the agent asks something)."""
+
+    title: bool = True
+    """Show the session in the terminal title, marked while the agent waits for you."""
+
+
 class Settings(BaseModel):
     """Contents of ``config.toml``."""
 
@@ -261,6 +284,9 @@ class Settings(BaseModel):
 
     expand_thoughts: bool = False
     """Show agent thoughts expanded instead of collapsed."""
+
+    notifications: NotificationSettings = Field(default_factory=NotificationSettings)
+    """When and how to get your attention."""
 
     images: ImageMode = "auto"
     """How images are drawn: ``auto`` (the best the terminal supports), ``tgp`` (kitty),

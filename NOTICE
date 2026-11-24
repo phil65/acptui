@@ -15,5 +15,7 @@ licensed under the GNU Affero General Public License v3.0:
   controlling terminal, the working directory reported by an escape sequence; after
   toad's src/toad/shell.py), and switching the prompt to shell mode with `!` / `$`
   (after toad's src/toad/widgets/prompt.py)
+- src/acptui/data/sounds/question.wav, turn-over.wav: toad's notification sounds
+  (src/toad/data/sounds/), resampled to 22 kHz mono and shortened
 
 The protocol layer (ACP v2 via aclientp) and the other widgets are new code.

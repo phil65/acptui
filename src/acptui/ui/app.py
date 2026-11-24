@@ -21,8 +21,16 @@ from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.markup import escape
 
+from acptui.notify import (
+    desktop_notify,
+    play_sound,
+    terminal_notification,
+    terminal_title,
+    use_desktop,
+)
 from acptui.setup import build_setup
 from acptui.ui.agent_log import AgentLog
+from acptui.ui.attention import SOUNDS, WAITING_MARK, Alert, Attention, TitleChanged
 from acptui.ui.markdown import AgentMarkdown, link_is_web, summary_markdown
 from acptui.ui.screens.dialogs import ConfirmScreen, _select_values, method_description
 from acptui.ui.screens.picker import AgentPicker
@@ -30,9 +38,15 @@ from acptui.ui.screens.session import SessionScreen
 from acptui.ui.widgets.image import prepare as prepare_images
 
 
+SAVE_TITLE = "\x1b[22;0t"
+"""XTWINOPS: push the terminal title (restored on quit)."""
+RESTORE_TITLE = "\x1b[23;0t"
+
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from textual.screen import Screen
     from textual.widgets import Markdown
 
     from acptui.config import AgentSpec, Settings
@@ -144,6 +158,9 @@ class AcpTui(App[None]):
         self.resume_id = resume_id
         self.agent_log = AgentLog()
         prepare_images(settings.images)
+        self.alerts: list[Alert] = []
+        """Alerts raised so far (see :meth:`on_attention`)."""
+        self._terminal_title = ""
 
     def screen_text(self) -> str:
         """The current screen as plain text (what an SVG screenshot shows, without styling)."""
@@ -181,7 +198,74 @@ class AcpTui(App[None]):
         self.copy_to_clipboard(text)
         self.notify(f"{folder / stem}.txt / .svg (text copied)", title="Screenshot")
 
+    # --- Attention: bell, sounds, notifications, terminal title -----------------------
+
+    def on_attention(self, message: Attention) -> None:
+        """A session wants attention: bell for questions, and outside the app if away."""
+        message.stop()
+        settings = self.settings.notifications
+        if message.kind == "question":
+            self.bell()
+        away = not self.app_focus or not self.is_shown(message.source)
+        outside = settings.when == "always" or (settings.when == "unfocused" and away)
+        if message.kind == "turn_end" and not settings.turn_end:
+            outside = False
+        self.alerts.append(Alert(message.kind, message.title, message.message, outside))
+        self.refresh_title()
+        if not outside or self.is_headless:
+            return
+        sound = SOUNDS[message.kind] if settings.sounds else None
+        desktop = use_desktop(settings.method)
+        if not desktop:
+            self._write_terminal(terminal_notification(message.title, message.message))
+        title, text = message.title, message.message
+
+        def notify_outside() -> None:
+            if desktop:
+                desktop_notify(title, text)
+            if sound is not None:
+                play_sound(sound)
+
+        self.run_worker(notify_outside, thread=True, group="alerts", exit_on_error=False)
+
+    def is_shown(self, screen: Screen[object]) -> bool:
+        """Whether ``screen`` is what the user looks at (on top, or under a dialog)."""
+        return screen in self.screen_stack
+
+    def on_title_changed(self, message: TitleChanged) -> None:
+        message.stop()
+        self.refresh_title()
+
+    def refresh_title(self) -> None:
+        """Show the current session in the terminal title; mark it while an agent waits."""
+        if not self.settings.notifications.title:
+            return
+        screen = next(
+            (s for s in reversed(self.screen_stack) if isinstance(s, SessionScreen)), None
+        )
+        parts = ["acptui"]
+        if screen is not None:
+            parts.append(screen.spec.name)
+            if screen.state is not None and screen.state.title:
+                parts.append(screen.state.title)
+        waiting = any(s.waiting for s in self.session_screens())
+        title = (WAITING_MARK if waiting else "") + " · ".join(parts)
+        if title != self._terminal_title:
+            self._terminal_title = title
+            self._write_terminal(terminal_title(title))
+
+    def session_screens(self) -> list[SessionScreen]:
+        """The open session screens."""
+        return [s for s in self.screen_stack if isinstance(s, SessionScreen)]
+
+    def _write_terminal(self, text: str) -> None:
+        # Like App.bell: escape sequences go straight to the terminal.
+        if not self.is_headless and self._driver is not None:
+            self._driver.write(text)
+
     def on_mount(self) -> None:
+        if self.settings.notifications.title:
+            self._write_terminal(SAVE_TITLE)
         if self.settings.theme in self.available_themes:
             self.theme = self.settings.theme
         if self.spec is not None:
@@ -229,4 +313,6 @@ class AcpTui(App[None]):
         for screen in self.screen_stack:
             if isinstance(screen, SessionScreen):
                 await screen.shutdown()
+        if self.settings.notifications.title:
+            self._write_terminal(RESTORE_TITLE)
         self.exit()

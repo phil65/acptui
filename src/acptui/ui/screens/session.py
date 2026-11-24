@@ -42,6 +42,7 @@ from acptui.protocol.content import content_markdown
 from acptui.protocol.prompt import PromptOptions, build_prompt, shell_block
 from acptui.protocol.state import EntryAdded, EntryChanged, MessageEntry, SessionState, ShellEntry
 from acptui.shell import open_shell
+from acptui.ui.attention import Attention, TitleChanged
 from acptui.ui.markdown import inline_markdown
 from acptui.ui.screens.dialogs import (
     ConfigScreen,
@@ -88,6 +89,7 @@ if TYPE_CHECKING:
     from acptui.protocol.state import SessionActivity
     from acptui.shell import Shell, ShellCommand
     from acptui.ui.agent_log import AgentLog
+    from acptui.ui.attention import AttentionKind
     from acptui.ui.screens.dialogs import ConfigChoice
     from acptui.ui.widgets.blocks import SubagentView, ToolCallView
     from acptui.ui.widgets.terminal import ShellView, TerminalView
@@ -483,6 +485,8 @@ class SessionScreen(Screen[None]):
         panel = ErrorPanel(Content.assemble(text, (hint, "$text-muted italic")))
         panel.border_title = title
         self.agent_log.add("error", f"{title}: {text.plain}")
+        if fatal:
+            self.attention("error", title, text.plain.splitlines()[0])
         self.conversation.mount(panel)
 
     # --- AgentEvents ----------------------------------------------------------------
@@ -500,7 +504,15 @@ class SessionScreen(Screen[None]):
 
     def session_update(self, notification: UpdateSessionNotification) -> None:
         state = self._state_for(notification.session_id)
+        was_running = state.running
+        old_title = state.title
         changes = state.apply(notification.update)
+        if state is self.state:
+            if was_running and not state.running and not state.replaying:
+                reason = state.stop_reason or "done"
+                self.attention("turn_end", "Turn ended", reason.replace("_", " "))
+            if state.title != old_title:
+                self.post_message(TitleChanged())
         if state is self.state:
             self.conversation.push(changes)
         elif (
@@ -517,11 +529,22 @@ class SessionScreen(Screen[None]):
             if state is self.state:
                 self.conversation.push(changes)
         screen = PermissionScreen(request, state.cwd, self.diff_mode)
-        self.app.bell()
-        return await self._ask(screen, cancelled())
+        options = ", ".join(option.name for option in request.options)
+        return await self._ask(screen, cancelled(), (request.title, options))
 
-    async def _ask[T](self, screen: ModalScreen[T], default: T) -> T:
-        """Show a dialog and wait for its answer.
+    @property
+    def waiting(self) -> bool:
+        """Whether the agent waits for the user (a permission or input dialog is open)."""
+        return bool(self._dialogs)
+
+    def attention(self, kind: AttentionKind, title: str, message: str = "") -> None:
+        """Ask the app for the user's attention (bell, sound, notification)."""
+        self.post_message(Attention(kind, f"{self.spec.name}: {title}", message, self))
+
+    async def _ask[T](
+        self, screen: ModalScreen[T], default: T, alert: tuple[str, str] | None = None
+    ) -> T:
+        """Show a dialog and wait for its answer (``alert``: notification title and text).
 
         If the agent cancels the request (``$/cancel_request``) or the connection ends,
         the dialog is closed.
@@ -529,6 +552,8 @@ class SessionScreen(Screen[None]):
         loop = asyncio.get_running_loop()
         future: asyncio.Future[T] = loop.create_future()
         self._dialogs.add(screen)
+        title, text = alert or ("Input needed", "")
+        self.attention("question", title, text)
 
         def done(result: T | None) -> None:
             if not future.done():
@@ -543,6 +568,7 @@ class SessionScreen(Screen[None]):
             raise
         finally:
             self._dialogs.discard(screen)
+            self.post_message(TitleChanged())
 
     async def create_elicitation(
         self, request: CreateElicitationRequest
@@ -551,12 +577,16 @@ class SessionScreen(Screen[None]):
 
         match request:
             case FormElicitationRequest():
-                return await self._ask(FormElicitationScreen(request), cancelled_elicitation())
+                alert = ("Input needed", request.message)
+                return await self._ask(
+                    FormElicitationScreen(request), cancelled_elicitation(), alert
+                )
             case UrlElicitationRequest():
                 screen = UrlElicitationScreen(request)
                 self._url_elicitations[request.elicitation_id] = screen
                 try:
-                    return await self._ask(screen, cancelled_elicitation())
+                    alert = ("Please open a URL", request.message)
+                    return await self._ask(screen, cancelled_elicitation(), alert)
                 finally:
                     self._url_elicitations.pop(request.elicitation_id, None)
             case _:
