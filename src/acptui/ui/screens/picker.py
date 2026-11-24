@@ -63,16 +63,19 @@ class AgentPicker(Screen[None]):
 
     BINDINGS: ClassVar = [
         Binding("c", "custom", "Command / URL"),
-        Binding("escape", "focus_list", "Back", show=False),
+        Binding("d", "directory", "Directory"),
+        Binding("escape", "back", "Back", show=False),
         Binding("q", "app.quit", "Quit"),
     ]
 
     class Picked(Message):
         """An agent was chosen."""
 
-        def __init__(self, spec: AgentSpec) -> None:
+        def __init__(self, spec: AgentSpec, cwd: str) -> None:
             super().__init__()
             self.spec = spec
+            self.cwd = cwd
+            """The project directory for the session."""
 
     def __init__(self, agents: list[AgentSpec], cwd: str) -> None:
         super().__init__()
@@ -81,10 +84,7 @@ class AgentPicker(Screen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="picker"):
-            home = str(Path.home())
-            cwd = "~" + self.cwd[len(home) :] if self.cwd.startswith(home) else self.cwd
-            heading = Content.assemble("acptui · pick an agent for ", (cwd, "italic"))
-            yield Static(heading, id="heading")
+            yield Static(self._heading(), id="heading")
             yield OptionList(*(agent_option(spec) for spec in self.agents), id="agents")
             yield Input(
                 placeholder="…or an agent command (e.g. my-agent --acp) or URL, then enter",
@@ -96,6 +96,13 @@ class AgentPicker(Screen[None]):
             )
         yield Footer()
 
+    def _heading(self) -> Content:
+        home = str(Path.home())
+        cwd = "~" + self.cwd[len(home) :] if self.cwd.startswith(home) else self.cwd
+        return Content.assemble(
+            "acptui · pick an agent for ", (cwd, "italic"), ("  (d: change)", "$text-muted")
+        )
+
     def on_mount(self) -> None:
         options = self.query_one("#agents", OptionList)
         options.focus()
@@ -105,14 +112,14 @@ class AgentPicker(Screen[None]):
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         spec = next((s for s in self.agents if s.id == event.option_id), None)
         if spec is not None:
-            self.post_message(self.Picked(spec))
+            self.post_message(self.Picked(spec, self.cwd))
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         value = event.value.strip()
         if not value:
             return
         spec = url_spec(value) if "://" in value else command_spec(value.split())
-        self.post_message(self.Picked(spec))
+        self.post_message(self.Picked(spec, self.cwd))
 
     def action_custom(self) -> None:
         """Focus the command input."""
@@ -121,3 +128,31 @@ class AgentPicker(Screen[None]):
     def action_focus_list(self) -> None:
         """Focus the agent list."""
         self.query_one("#agents", OptionList).focus()
+
+    def action_back(self) -> None:
+        """Back to the agent list, or (from a new tab) back to the last tab."""
+        options = self.query_one("#agents", OptionList)
+        if not options.has_focus:
+            options.focus()
+            return
+        self.post_message(self.Back())  # the app shows the last tab, if there is one
+
+    class Back(Message):
+        """Leave the picker for the last tab."""
+
+    def action_directory(self) -> None:
+        """Change the project directory of the next session."""
+        from acptui.ui.screens.dialogs import TextInputScreen
+
+        def chosen(value: str | None) -> None:
+            if not value:
+                return
+            path = Path(value).expanduser()
+            path = path if path.is_absolute() else Path(self.cwd) / path
+            if not path.is_dir():
+                self.notify(f"Not a directory: {path}", severity="error")
+                return
+            self.cwd = str(path.resolve())
+            self.query_one("#heading", Static).update(self._heading())
+
+        self.app.push_screen(TextInputScreen("Project directory", self.cwd), callback=chosen)

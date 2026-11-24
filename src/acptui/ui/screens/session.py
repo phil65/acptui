@@ -62,6 +62,7 @@ from acptui.ui.widgets.conversation import ConversationView
 from acptui.ui.widgets.files import FilesPanel, FileTree
 from acptui.ui.widgets.prompt import CompletionList, PromptInput
 from acptui.ui.widgets.status import StatusBar
+from acptui.ui.widgets.tabs import SessionTabs
 
 
 if TYPE_CHECKING:
@@ -92,6 +93,7 @@ if TYPE_CHECKING:
     from acptui.ui.attention import AttentionKind
     from acptui.ui.screens.dialogs import ConfigChoice
     from acptui.ui.widgets.blocks import SubagentView, ToolCallView
+    from acptui.ui.widgets.tabs import TabInfo, TabState
     from acptui.ui.widgets.terminal import ShellView, TerminalView
 
 
@@ -233,6 +235,12 @@ class SessionScreen(Screen[None]):
         self._dialogs: set[Widget] = set()
         """Open permission and elicitation dialogs (closed when the agent goes away)."""
         self._url_elicitations: dict[str, UrlElicitationScreen] = {}
+        self.connection_state = "starting"
+        """``starting``, ``connected`` or ``disconnected``."""
+        self.tab_id = ""
+        """The app's name for this tab (its Textual mode)."""
+        self._shown = asyncio.Event()
+        """Set when the screen is shown again (dialogs of a background tab wait for it)."""
         self._subagent_screens: dict[str, SubagentScreen] = {}
 
     # --- Layout ---------------------------------------------------------------------
@@ -276,6 +284,7 @@ class SessionScreen(Screen[None]):
         self.prompt.focus()
 
     def compose(self) -> ComposeResult:
+        yield SessionTabs()
         yield FilesPanel(self.files)
         yield ConversationView(
             self.agent_log,
@@ -469,6 +478,7 @@ class SessionScreen(Screen[None]):
 
     def _set_connection_state(self, value: str) -> None:
         self.connected = value == "connected"
+        self.connection_state = value
         self.status.connection_state = value
         self.status.refresh_status()
         self.prompt.set_class(not self.connected, "-disabled")
@@ -532,6 +542,38 @@ class SessionScreen(Screen[None]):
         options = ", ".join(option.name for option in request.options)
         return await self._ask(screen, cancelled(), (request.title, options))
 
+    # --- Tabs -----------------------------------------------------------------------
+
+    @property
+    def tab_label(self) -> str:
+        """The tab's label: the agent, and the session title if there is one."""
+        title = self.state.title if self.state is not None else None
+        return f"{self.spec.name}: {title}" if title else self.spec.name
+
+    @property
+    def tab_state(self) -> TabState:
+        """What the session is doing, for the tab bar."""
+        if self.waiting:
+            return "waiting"
+        if self.connection_state == "starting":
+            return "starting"
+        if not self.connected:
+            return "disconnected"
+        return "working" if self.state is not None and self.state.running else "idle"
+
+    def show_tabs(self, tabs: list[TabInfo], *, visible: bool) -> None:
+        """Update the tab bar."""
+        self.query_one(SessionTabs).show_tabs(tabs, visible=visible)
+
+    def on_screen_resume(self) -> None:
+        self._shown.set()
+
+    async def _until_shown(self) -> None:
+        """Wait until this tab is the one shown (dialogs of other tabs wait)."""
+        while self not in self.app.screen_stack:
+            self._shown.clear()
+            await self._shown.wait()
+
     @property
     def waiting(self) -> bool:
         """Whether the agent waits for the user (a permission or input dialog is open)."""
@@ -554,6 +596,11 @@ class SessionScreen(Screen[None]):
         self._dialogs.add(screen)
         title, text = alert or ("Input needed", "")
         self.attention("question", title, text)
+        try:
+            await self._until_shown()
+        except asyncio.CancelledError:
+            self._dialogs.discard(screen)
+            raise
 
         def done(result: T | None) -> None:
             if not future.done():

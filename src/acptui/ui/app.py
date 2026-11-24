@@ -32,11 +32,20 @@ from acptui.setup import build_setup
 from acptui.ui.agent_log import AgentLog
 from acptui.ui.attention import SOUNDS, WAITING_MARK, Alert, Attention, TitleChanged
 from acptui.ui.markdown import AgentMarkdown, link_is_web, summary_markdown
-from acptui.ui.screens.dialogs import ConfirmScreen, _select_values, method_description
+from acptui.ui.screens.dialogs import (
+    ConfirmScreen,
+    TabsScreen,
+    _select_values,
+    method_description,
+)
 from acptui.ui.screens.picker import AgentPicker
 from acptui.ui.screens.session import SessionScreen
 from acptui.ui.widgets.image import prepare as prepare_images
+from acptui.ui.widgets.tabs import SessionTabs, TabInfo
 
+
+PICKER_MODE = "picker"
+"""The Textual mode of the agent picker (each tab has a mode of its own)."""
 
 SAVE_TITLE = "\x1b[22;0t"
 """XTWINOPS: push the terminal title (restored on quit)."""
@@ -63,6 +72,15 @@ def session_commands(screen: SessionScreen) -> Iterator[tuple[str, str, Callable
         screen.action_fork_session,
     )
     yield "Rename session", "Set the session title", screen.action_rename_session
+    app = screen.app
+    if isinstance(app, AcpTui):
+        yield "New tab", "Start another agent session in a new tab (ctrl+t)", app.action_new_tab
+        yield (
+            "Close tab",
+            "Stop this tab's agent and close it (alt+w)",
+            partial(app.call_later, app.action_close_tab),
+        )
+        yield "Sessions", "All tabs and what they are doing (ctrl+s)", app.action_sessions
     yield "Session options", "Mode, model and other options", screen.action_options
     yield "Cancel turn", "Cancel the running turn", screen.action_cancel_turn
     yield "LLM providers", "Configure the agent's LLM providers", screen.action_providers
@@ -135,6 +153,11 @@ class AcpTui(App[None]):
     COMMANDS: ClassVar = App.COMMANDS | {SessionCommands}
     BINDINGS: ClassVar = [
         Binding("ctrl+q", "quit", "Quit", priority=True),
+        Binding("ctrl+t", "new_tab", "New tab", show=False),
+        Binding("alt+w", "close_tab", "Close tab", show=False),
+        Binding("alt+right", "next_tab(1)", "Next tab", show=False),
+        Binding("alt+left", "next_tab(-1)", "Previous tab", show=False),
+        Binding("ctrl+s", "sessions", "Tabs", show=False),
         Binding("f12", "screenshot", "Screenshot", show=False),
     ]
     CSS = """
@@ -156,7 +179,10 @@ class AcpTui(App[None]):
         self.cwd = cwd
         self.spec = spec
         self.resume_id = resume_id
-        self.agent_log = AgentLog()
+        self._fallback_log = AgentLog()
+        self.tabs: dict[str, SessionScreen] = {}
+        """Open tabs: mode name -> session screen, in tab order."""
+        self._tab_counter = 0
         prepare_images(settings.images)
         self.alerts: list[Alert] = []
         """Alerts raised so far (see :meth:`on_attention`)."""
@@ -255,8 +281,8 @@ class AcpTui(App[None]):
             self._write_terminal(terminal_title(title))
 
     def session_screens(self) -> list[SessionScreen]:
-        """The open session screens."""
-        return [s for s in self.screen_stack if isinstance(s, SessionScreen)]
+        """The open session screens (one per tab)."""
+        return list(self.tabs.values())
 
     def _write_terminal(self, text: str) -> None:
         # Like App.bell: escape sequences go straight to the terminal.
@@ -268,26 +294,140 @@ class AcpTui(App[None]):
             self._write_terminal(SAVE_TITLE)
         if self.settings.theme in self.available_themes:
             self.theme = self.settings.theme
+        # The picker has a mode of its own: "new tab" and closing the last tab go there.
+        picker = AgentPicker(self.settings.all_agents(), str(self.cwd))
+        self.add_mode(PICKER_MODE, lambda: picker)
+        if self.spec is None:
+            self.switch_mode(PICKER_MODE)
         if self.spec is not None:
-            self.push_screen(self._session_screen(self.spec))
-        else:
-            self.push_screen(AgentPicker(self.settings.all_agents(), str(self.cwd)))
+            self.open_tab(
+                self.spec, resume_id=self.resume_id, setup=self.setup_override, focus=True
+            )
+        self.set_interval(0.5, self.refresh_tabs, name="tabs")
 
-    def _session_screen(self, spec: AgentSpec) -> SessionScreen:
-        return SessionScreen(
+    # --- Tabs: one session screen (and agent) per Textual mode -----------------------
+
+    @property
+    def agent_log(self) -> AgentLog:
+        """The agent log of the session shown (or of the last one)."""
+        screen = self.current_tab or next(reversed(self.tabs.values()), None)
+        return screen.agent_log if screen is not None else self._fallback_log
+
+    @property
+    def current_tab(self) -> SessionScreen | None:
+        """The session screen of the tab shown (``None`` on the picker)."""
+        return self.tabs.get(self.current_mode)
+
+    def open_tab(
+        self,
+        spec: AgentSpec,
+        cwd: Path | None = None,
+        *,
+        resume_id: str | None = None,
+        setup: SessionSetup | None = None,
+        focus: bool = True,
+    ) -> SessionScreen:
+        """Start a session with ``spec`` in a new tab (and show it)."""
+        self._tab_counter += 1
+        tab_id = f"session-{self._tab_counter}"
+        screen = SessionScreen(
             spec,
-            self.cwd,
-            self.agent_log,
+            cwd or self.cwd,
+            AgentLog(),
             diff_mode=self.settings.diff_view,
             expand_thoughts=self.settings.expand_thoughts,
-            resume_id=self.resume_id,
-            setup=self.setup_override or build_setup(self.settings, spec),
+            resume_id=resume_id,
+            setup=setup or build_setup(self.settings, spec),
             mounts=self.settings.mounts,
         )
+        screen.tab_id = tab_id
+        self.tabs[tab_id] = screen
+        self.add_mode(tab_id, lambda: screen)
+        if focus:
+            self.switch_mode(tab_id)
+        self.refresh_tabs()
+        return screen
+
+    async def close_tab(self, tab_id: str | None = None) -> None:
+        """Close a tab (the shown one by default): stop its agent, show a neighbor."""
+        tab_id = tab_id or self.current_mode
+        screen = self.tabs.get(tab_id)
+        if screen is None:
+            return
+        await screen.shutdown()
+        ids = list(self.tabs)
+        index = ids.index(tab_id)
+        del self.tabs[tab_id]
+        if self.current_mode == tab_id:
+            rest = list(self.tabs)
+            target = rest[min(index, len(rest) - 1)] if rest else PICKER_MODE
+            await self.switch_mode(target)
+        await self.remove_mode(tab_id)
+        self.refresh_tabs()
+        self.refresh_title()
+
+    def switch_tab(self, tab_id: str) -> None:
+        """Show a tab."""
+        if tab_id in self.tabs and tab_id != self.current_mode:
+            self.switch_mode(tab_id)
+            self.refresh_tabs()
+            self.refresh_title()
+
+    def action_new_tab(self) -> None:
+        """Pick an agent for a new tab (the agent picker; escape goes back)."""
+        self.switch_mode(PICKER_MODE)
+        self.refresh_title()
+
+    async def action_close_tab(self) -> None:
+        """Close the shown tab."""
+        await self.close_tab()
+
+    def action_next_tab(self, step: int) -> None:
+        """Show the next (``1``) or previous (``-1``) tab."""
+        ids = list(self.tabs)
+        if not ids:
+            return
+        index = ids.index(self.current_mode) if self.current_mode in ids else -1
+        self.switch_tab(ids[(index + step) % len(ids)])
+
+    def action_sessions(self) -> None:
+        """All tabs and what they are doing; enter shows one."""
+
+        def chosen(tab_id: str | None) -> None:
+            if tab_id is not None:
+                self.switch_tab(tab_id)
+
+        self.push_screen(TabsScreen(self.tab_infos(), self._tab_details()), callback=chosen)
+
+    def tab_infos(self) -> list[TabInfo]:
+        """What the tab bars show."""
+        return [
+            TabInfo(tab_id, screen.tab_label, screen.tab_state, tab_id == self.current_mode)
+            for tab_id, screen in self.tabs.items()
+        ]
+
+    def _tab_details(self) -> dict[str, str]:
+        return {tab_id: str(screen.cwd) for tab_id, screen in self.tabs.items()}
+
+    def refresh_tabs(self) -> None:
+        """Update the tab bars (labels, states, which one is shown)."""
+        infos = self.tab_infos()
+        mode = self.settings.tabs
+        visible = mode == "always" or (mode == "multiple" and len(infos) > 1)
+        for screen in self.tabs.values():
+            if screen.is_mounted:
+                screen.show_tabs(infos, visible=visible)
+
+    def on_session_tabs_switch(self, message: SessionTabs.Switch) -> None:
+        self.switch_tab(message.tab_id)
+
+    def on_agent_picker_back(self) -> None:
+        if self.tabs:
+            self.switch_tab(list(self.tabs)[-1])
 
     def on_agent_picker_picked(self, message: AgentPicker.Picked) -> None:
         self.spec = message.spec
-        self.switch_screen(self._session_screen(message.spec))
+        self.open_tab(message.spec, Path(message.cwd) if message.cwd else None)
 
     def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
         """Open a link the user clicked in agent Markdown.
@@ -310,9 +450,8 @@ class AcpTui(App[None]):
         self.push_screen(ConfirmScreen(f"Open this link?\n\n{href}"), callback=answered)
 
     async def action_quit(self) -> None:
-        for screen in self.screen_stack:
-            if isinstance(screen, SessionScreen):
-                await screen.shutdown()
+        for screen in list(self.tabs.values()):
+            await screen.shutdown()
         if self.settings.notifications.title:
             self._write_terminal(RESTORE_TITLE)
         self.exit()

@@ -288,6 +288,9 @@ class Settings(BaseModel):
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)
     """When and how to get your attention."""
 
+    tabs: Literal["always", "multiple", "never"] = "multiple"
+    """When to show the session tab bar: always, when there are several tabs, never."""
+
     images: ImageMode = "auto"
     """How images are drawn: ``auto`` (the best the terminal supports), ``tgp`` (kitty),
     ``sixel``, ``halfcell`` (colored half blocks, any terminal), ``unicode`` or ``off``."""

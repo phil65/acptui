@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 
     from acptui.protocol.connection import AgentConnection
     from acptui.protocol.state import CursorState, SessionState
+    from acptui.ui.widgets.tabs import TabInfo
 
 
 DIALOG_CSS = """
@@ -500,6 +501,55 @@ class ConfigScreen(ModalScreen[ConfigChoice | None]):
             self.dismiss(None)
 
 
+class TabsScreen(ModalScreen[str | None]):
+    """All tabs with their state and directory; returns the tab to show."""
+
+    DEFAULT_CSS = "TabsScreen {" + DIALOG_CSS + "}"
+    BINDINGS: ClassVar = [Binding("escape", "dismiss_none", "Close")]
+
+    def __init__(self, tabs: Sequence[TabInfo], directories: dict[str, str]) -> None:
+        super().__init__()
+        self.tabs = list(tabs)
+        self.directories = directories
+
+    def compose(self) -> ComposeResult:
+        from acptui.ui.widgets.tabs import ICONS
+
+        with Vertical(id="dialog"):
+            yield Static("Sessions", id="dialog-title")
+            options: list[Option] = []
+            for index, tab in enumerate(self.tabs, start=1):
+                icon, style = ICONS[tab.state]
+                label = Content.assemble(
+                    f"{index} ",
+                    (icon, style),
+                    " ",
+                    (tab.label, "bold"),
+                    (f"  {tab.state}", "$text-muted"),
+                    ("  (shown)" if tab.active else "", "$text-accent"),
+                    "\n    ",
+                    (self.directories.get(tab.tab_id, ""), "$text-muted"),
+                )
+                options.append(Option(label, id=tab.tab_id))
+            yield OptionList(*options, id="tabs")
+            hint = "enter: show · escape: close" if self.tabs else "No sessions yet (ctrl+t)."
+            yield Static(hint, id="dialog-hint")
+
+    def on_mount(self) -> None:
+        options = self.query_one(OptionList)
+        options.focus()
+        active = next((i for i, tab in enumerate(self.tabs) if tab.active), 0)
+        if self.tabs:
+            options.highlighted = active
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option_id)
+
+    def action_dismiss_none(self) -> None:
+        """Close."""
+        self.dismiss(None)
+
+
 def method_description(method: AuthMethod) -> str:
     """An auth method's description (Markdown in ACP v2), or ``""``."""
     if isinstance(method, AuthMethodAgent | AuthMethodTerminal) and is_set(method.description):
@@ -597,6 +647,10 @@ A terminal UI for AI coding agents speaking **ACP v2**.
 | `ctrl+l` | Agent log (stderr and protocol traffic) |
 | `tab` | Focus the conversation; `enter` on a tool call toggles it, `x` cancels it |
 | `pageup` / `pagedown` | Scroll the conversation |
+| `ctrl+t` | New tab: another session (picker; `d` changes the directory) |
+| `alt+left` / `alt+right` | Previous / next tab |
+| `alt+w` | Close the tab (stops its agent) |
+| `ctrl+s` | All sessions (tabs) and what they are doing |
 | `ctrl+p` | Command palette |
 | `f5` | Restart the agent |
 | `ctrl+b` | Files panel; `a` mentions the highlighted node |

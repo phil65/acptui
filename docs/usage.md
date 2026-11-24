@@ -61,6 +61,10 @@ the account, background work, mode and model, the context window and the cost.
 | `f2` | Rename the session |
 | `ctrl+d` | Diff view: unified / split / auto |
 | `ctrl+l` | Agent log: stderr, and `t` for the protocol traffic |
+| `ctrl+t` | New tab: pick an agent (and with `d` a directory) for another session |
+| `alt+left` / `alt+right` | Previous / next tab |
+| `alt+w` | Close the tab (stops its agent) |
+| `ctrl+s` | All sessions: the tabs, their state and directory |
 | `ctrl+p` | Command palette: everything above, login / logout, providers, option values |
 | `f5` | Restart the agent |
 | `f1` | Help |
@@ -69,6 +73,17 @@ the account, background work, mode and model, the context window and the cost.
 | `ctrl+g` | Drop the shell output waiting for the next prompt |
 | `f12` | Screenshot: the screen as SVG and as text (Downloads), text copied to the clipboard |
 | `ctrl+q` | Quit |
+
+## Tabs
+
+Each tab is a session with its own agent process: run Claude Code in one tab and Codex
+in another, or two sessions of one agent in different directories. `ctrl+t` opens the
+agent picker for a new tab (`escape` goes back, `d` changes the project directory);
+the tab bar appears once there are two tabs (`tabs = "always"`, `"multiple"` or
+`"never"` in the config) and shows what each session does: `◐` working, `?` waiting
+for you, `●` idle, `✘` disconnected. Click a tab or use `alt+left` / `alt+right`;
+`ctrl+s` lists all of them, `alt+w` closes one. A question from a tab in the background
+waits until you switch to it (the tab shows `?`, and you get a notification).
 
 ## Notifications
 
@@ -175,6 +190,7 @@ default_agent = "codex"
 theme = "tokyo-night"              # any Textual theme
 diff_view = "auto"                 # unified, split or auto (split from 120 columns)
 expand_thoughts = false
+tabs = "multiple"                  # tab bar: always, multiple (tabs), never
 images = "auto"                    # auto, tgp (kitty), sixel, halfcell, unicode or off
 system_prompt = "Prefer small commits."
 system_prompt_mode = "append"
