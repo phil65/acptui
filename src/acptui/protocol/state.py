@@ -336,7 +336,7 @@ Change = EntryAdded | EntryChanged | TerminalChanged | SessionChanged
 def _decode(data: str) -> bytes:
     try:
         return base64.b64decode(data, validate=False)
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return b""
 
 

@@ -70,7 +70,7 @@ class RecentSessions:
                     title=str(data.get("title", "")),
                     time=float(data.get("time", 0.0)),
                 )
-            except (ValueError, KeyError, TypeError):
+            except ValueError, KeyError, TypeError:
                 continue
             key = (session.agent_id, session.session_id)
             if (old := latest.get(key)) is not None and not session.title:

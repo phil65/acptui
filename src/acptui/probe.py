@@ -95,7 +95,7 @@ class ProbeResults:
         """All results (unreadable entries skipped)."""
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return {}
         results: dict[str, ProbeResult] = {}
         if isinstance(data, dict):

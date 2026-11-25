@@ -760,7 +760,7 @@ class DemoAgent(Agent):
         await anyio.sleep(_delay() * 5)
         try:
             head = "".join(target.read_text(encoding="utf-8").splitlines(keepends=True)[:5])
-        except (OSError, UnicodeDecodeError):
+        except OSError, UnicodeDecodeError:
             head = "(file not readable)"
         await self._send(
             session,

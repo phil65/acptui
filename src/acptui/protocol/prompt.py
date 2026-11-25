@@ -115,7 +115,7 @@ def file_block(path: Path, options: PromptOptions) -> ContentBlock:
         if options.embedded_context and size <= MAX_EMBED_BYTES and _is_text(path, mime):
             try:
                 text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            except OSError, UnicodeDecodeError:
                 pass
             else:
                 return EmbeddedResource(

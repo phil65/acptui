@@ -832,5 +832,5 @@ def raw_json(value: object) -> str:
     """Pretty JSON for raw tool input/output."""
     try:
         return json.dumps(value, indent=2, ensure_ascii=False, default=str)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return str(value)

@@ -63,7 +63,7 @@ def decode(data: str) -> PILImage | str:
         return "too large to show"
     try:
         raw = base64.b64decode(data, validate=True)
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return "invalid base64 data"
     try:
         image = Image.open(io.BytesIO(raw))

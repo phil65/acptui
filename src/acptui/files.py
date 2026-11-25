@@ -97,7 +97,7 @@ class Files:
             if not self.fs.exists(inner):
                 return None
             data = self._read(inner)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
         uri = f"{self.fs.protocol if isinstance(self.fs.protocol, str) else self.fs.protocol[0]}://{inner}"
         label = mention.rsplit("/", 1)[-1] or mention

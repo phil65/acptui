@@ -172,6 +172,6 @@ def _run(command: list[str]) -> bool:
             timeout=TIMEOUT,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return False
     return result.returncode == 0
