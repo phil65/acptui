@@ -81,7 +81,7 @@ uv sync --all-extras
 uv run pytest                 # protocol tests run the demo agent as a subprocess
 uv run ruff check . && uv run ruff format --check .
 uv run ty check               # src and tests; must report nothing
-uv run mkdocs-mknodes build   # docs: README + docs/*.md + generated API pages
+uv run mknodes build          # docs: README + docs/*.md + generated API pages
 uv run acptui run demo        # try it
 ```
 
