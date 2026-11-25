@@ -5,7 +5,7 @@ name = "acptui"
 version = "0.5.0"
 description = "Terminal UI for AI coding agents, built on ACP v2"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [
@@ -21,7 +21,6 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Topic :: Software Development",
   "Topic :: Software Development :: User Interfaces",
@@ -121,7 +120,7 @@ docstring-style = "google"
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
-pythonVersion = "3.13"
+pythonVersion = "3.14"
 pythonPlatform = "All"
 typeCheckingMode = "basic"
 deprecateTypingAliases = true
@@ -148,7 +147,7 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 extend-exclude = ["docs"]
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 future-annotations = true
@@ -290,7 +289,7 @@ max-complexity = 15
 preview = true
 
 [tool.ty.environment]
-python-version = "3.13"
+python-version = "3.14"
 python-platform = "all"
 
 [tool.ty.src]
