@@ -55,6 +55,8 @@ dependencies = [
 Documentation = "https://phil65.github.io/acptui/"
 Issues = "https://github.com/phil65/acptui/issues"
 Source = "https://github.com/phil65/acptui"
+"Spec: ACP schema v2" = "https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v2.0.0-beta.4"
+"Spec: Agent Client Protocol" = "https://agentclientprotocol.com"
 
 [project.scripts]
 acptui = "acptui.cli:main"

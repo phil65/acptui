@@ -103,6 +103,14 @@ uv run acptui run demo        # try it
 - UI tests use `App.run_test()` with the real demo agent; wait with the `until`
   helper in `tests/test_app.py`, never fixed sleeps alone.
 
+## Specs
+
+| Spec | URL | Targets | Code | Update check |
+|---|---|---|---|---|
+| Agent Client Protocol v2 (draft) | https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v2.0.0-beta.4 | via `aclientp>=0.6.0`, which pins `schema-v2.0.0-beta.4` (aclientp `schema/v2/VERSION`); `InitializeRequest(protocol_version=2)` | `src/acptui/protocol/` | `python -m aclientp.schema_reference --protocol 2 latest` (in aclientp), aclientp releases |
+| ACP Streamable HTTP & WebSocket transport (RFD, experimental) | https://agentclientprotocol.com/rfds/streamable-http-websocket-transport | via aclientp (`aclientp.ws_transport`) | `src/acptui/protocol/connection.py`, `src/acptui/serve.py` | same URL |
+| Terminal desktop notifications (OSC 777 / OSC 9 / OSC 99) | https://sw.kovidgoyal.net/kitty/desktop-notifications/ | unpinned (OSC 99 per kitty; OSC 9 / 777 are de-facto conventions without a spec) | `src/acptui/notify.py` | n/a |
+
 ## Pitfalls
 
 - Copier-managed (`copier-phil65`): `.github/workflows`, `duties.py`, `mkdocs.yml`,
