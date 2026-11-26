@@ -1,7 +1,5 @@
 """UI tests with Textual's pilot, against the demo agent (a real subprocess)."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from textual.widgets import OptionList

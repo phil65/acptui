@@ -5,8 +5,6 @@ permission or input, a turn ends, the agent fails) and calls these to do it. The
 are toad's (see ``NOTICE``), resampled to keep the package small.
 """
 
-from __future__ import annotations
-
 import asyncio
 from importlib.resources import as_file, files
 from importlib.util import find_spec

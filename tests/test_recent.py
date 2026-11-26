@@ -1,7 +1,5 @@
 """Recent sessions across agents, resumed from the picker."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from acptui.config import Settings

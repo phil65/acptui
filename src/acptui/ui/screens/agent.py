@@ -5,8 +5,6 @@ real terminal while acptui is suspended, so their prompts and progress work as u
 they are shown first and run only when the user picks the action.
 """
 
-from __future__ import annotations
-
 import asyncio
 import shlex
 import time

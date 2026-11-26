@@ -1,7 +1,5 @@
 """The settings screen, settings saved to config.toml, and the settings it adds."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from textual.widgets import OptionList

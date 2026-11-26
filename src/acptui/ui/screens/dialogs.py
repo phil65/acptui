@@ -1,7 +1,5 @@
 """Small modal dialogs: session list, config options, choices, help."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 

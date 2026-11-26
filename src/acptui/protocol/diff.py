@@ -1,7 +1,5 @@
 """Parsing ``git_patch`` text (``diff --git`` sections) into files, hunks and lines."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 import re
 from typing import Literal

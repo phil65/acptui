@@ -6,8 +6,6 @@ calls, a live terminal and a diff behind a permission request; ``/echo``, ``/slo
 ``/fail`` and ``/crash`` exercise other paths. Nothing is ever written to disk.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 from dataclasses import dataclass, field

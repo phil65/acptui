@@ -18,8 +18,6 @@ override built-in ones) in ``config.toml`` in the platform config directory::
     headers = { "X-API-Key" = "${MY_API_KEY}" }   # ${VAR} expands from the environment
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 import os
 from pathlib import Path

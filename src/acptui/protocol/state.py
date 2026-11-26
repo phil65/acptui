@@ -6,8 +6,6 @@ unchanged, ``None`` clears it. :class:`SessionState` applies them and reports wh
 changed, so a UI only has to render :class:`Change` events.
 """
 
-from __future__ import annotations
-
 import base64
 import binascii
 import copy

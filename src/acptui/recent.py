@@ -5,8 +5,6 @@ is acptui's own and spans agents and directories, like toad's session database. 
 JSON object per session in the platform state directory, newest last.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from dataclasses import asdict, dataclass
 import json

@@ -1,7 +1,5 @@
 """The agent log: stderr of the agent process and (optionally) the JSON-RPC traffic."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, ClassVar
 
 from rich.text import Text

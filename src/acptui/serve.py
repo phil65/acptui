@@ -12,8 +12,6 @@ accepts WebSocket connections from any site (browsers do not apply CORS to WebSo
   server's own, or ``--public-url``'s).
 """
 
-from __future__ import annotations
-
 import hmac
 import ipaddress
 import secrets

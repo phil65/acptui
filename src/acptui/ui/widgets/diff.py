@@ -1,7 +1,5 @@
 """Diff rendering for ``diff`` tool call content: unified or side by side, highlighted."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, ClassVar
 
 from aclientp.schema.v2 import (
@@ -14,10 +12,12 @@ from aclientp.schema.v2 import (
 from aclientp.schema.v2.base import is_set
 from textual.containers import Horizontal, Vertical
 from textual.content import Content
+from textual.events import Resize  # noqa: TC002
 from textual.highlight import highlight
 from textual.reactive import reactive
 from textual.widgets import Static
 
+from acptui.config import DiffViewMode  # noqa: TC001
 from acptui.protocol.content import relative_display
 from acptui.protocol.diff import parse_patch, side_by_side
 
@@ -25,9 +25,7 @@ from acptui.protocol.diff import parse_patch, side_by_side
 if TYPE_CHECKING:
     from aclientp.schema.v2 import Diff, DiffChange
     from textual.app import ComposeResult
-    from textual.events import Resize
 
-    from acptui.config import DiffViewMode
     from acptui.protocol.diff import DiffLine, FileDiff, Hunk
 
 

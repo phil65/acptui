@@ -5,8 +5,6 @@ agent sends arrives here and is routed to the session it belongs to (the main
 session, or one of its subagent sessions).
 """
 
-from __future__ import annotations
-
 import asyncio
 from dataclasses import dataclass
 import datetime as dt
@@ -34,6 +32,7 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.content import Content
 from textual.screen import Screen
+from textual.widget import Widget  # noqa: TC002
 from textual.widgets import Footer, Static
 
 from acptui.files import Files
@@ -58,6 +57,7 @@ from acptui.shell import open_shell
 from acptui.ui.attention import Attention, TitleChanged
 from acptui.ui.markdown import inline_markdown
 from acptui.ui.screens.dialogs import (
+    ConfigChoice,
     ConfigScreen,
     ForkScreen,
     HelpScreen,
@@ -71,11 +71,14 @@ from acptui.ui.screens.elicitation import FormElicitationScreen, UrlElicitationS
 from acptui.ui.screens.log import LogScreen
 from acptui.ui.screens.permission import PermissionScreen, cancelled
 from acptui.ui.screens.providers import ProvidersScreen
+from acptui.ui.widgets.blocks import SubagentView, ToolCallView  # noqa: TC001
 from acptui.ui.widgets.conversation import ConversationView
+from acptui.ui.widgets.files import FileTree  # noqa: TC001
 from acptui.ui.widgets.prompt import CompletionList, PromptInput
 from acptui.ui.widgets.sidebar import AUTO_OPEN_WIDTH, SideBar
 from acptui.ui.widgets.status import StatusBar
 from acptui.ui.widgets.tabs import SessionTabs
+from acptui.ui.widgets.terminal import ShellView, TerminalView  # noqa: TC001
 
 
 if TYPE_CHECKING:
@@ -97,7 +100,6 @@ if TYPE_CHECKING:
     from textual.app import ComposeResult
     from textual.screen import ModalScreen
     from textual.timer import Timer
-    from textual.widget import Widget
 
     from acptui.config import AgentSpec, DiffViewMode, SidebarMode, ToolExpand
     from acptui.history import History
@@ -106,11 +108,7 @@ if TYPE_CHECKING:
     from acptui.shell import Shell, ShellCommand
     from acptui.ui.agent_log import AgentLog
     from acptui.ui.attention import AttentionKind
-    from acptui.ui.screens.dialogs import ConfigChoice
-    from acptui.ui.widgets.blocks import SubagentView, ToolCallView
-    from acptui.ui.widgets.files import FileTree
     from acptui.ui.widgets.tabs import TabInfo, TabState
-    from acptui.ui.widgets.terminal import ShellView, TerminalView
 
 
 DIFF_MODES: tuple[DiffViewMode, ...] = ("unified", "split", "auto")

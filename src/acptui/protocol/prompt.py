@@ -1,7 +1,5 @@
 """Turning prompt text into v2 content blocks: ``@file`` mentions and skills."""
 
-from __future__ import annotations
-
 import base64
 from dataclasses import dataclass
 import mimetypes

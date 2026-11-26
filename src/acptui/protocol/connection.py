@@ -5,8 +5,6 @@ agent method has a typed call here, and every client method / notification is
 forwarded to :class:`AgentEvents` (the UI).
 """
 
-from __future__ import annotations
-
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 import json

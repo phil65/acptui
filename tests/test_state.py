@@ -1,7 +1,5 @@
 """SessionState: applying v2 session updates with patch semantics."""
 
-from __future__ import annotations
-
 from aclientp.schema.v2 import (
     AgentMessage,
     AgentMessageChunk,

@@ -1,7 +1,5 @@
 """The scrolling conversation of one session: renders :class:`SessionState` changes."""
 
-from __future__ import annotations
-
 import asyncio
 import datetime as dt
 from typing import TYPE_CHECKING, ClassVar

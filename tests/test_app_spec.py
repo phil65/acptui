@@ -1,7 +1,5 @@
 """UI tests for the rest of the v2 surface: subagents, elicitation, sessions, auth, providers."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from textual.widgets import Input, OptionList, Switch

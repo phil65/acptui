@@ -1,7 +1,5 @@
 """The protocol layer against real agent subprocesses: the demo agent and a v1 agent."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import BooleanSessionConfigOption, SelectSessionConfigOption, TextContent

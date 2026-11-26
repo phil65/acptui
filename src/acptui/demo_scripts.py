@@ -1,7 +1,5 @@
 """Turn scripts of the demo agent that exercise the rest of ACP v2."""
 
-from __future__ import annotations
-
 import asyncio
 import base64
 import struct

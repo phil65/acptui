@@ -1,7 +1,5 @@
 """In-memory log of the agent's stderr and the JSON-RPC traffic."""
 
-from __future__ import annotations
-
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime

@@ -1,7 +1,5 @@
 """Images drawn in the terminal (textual-image), with a caption and fallbacks."""
 
-from __future__ import annotations
-
 import base64
 import io
 from typing import TYPE_CHECKING

@@ -1,7 +1,5 @@
 """The sidebar (plan and files), the compact plan in the conversation, layout toggles."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import PlanEntry as SchemaPlanEntry, PlanItems, PlanMarkdown

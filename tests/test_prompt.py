@@ -1,7 +1,5 @@
 """Building prompt content blocks from text and @-mentions."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import (

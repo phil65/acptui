@@ -1,7 +1,5 @@
 """The prompt history file."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from acptui import history as history_module

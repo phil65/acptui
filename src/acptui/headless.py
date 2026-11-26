@@ -1,7 +1,5 @@
 """Talking to an agent without the UI (for ``acptui options``)."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import (

@@ -1,7 +1,5 @@
 """Attention: bell, sounds, desktop and terminal notifications, the terminal title."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 import pytest

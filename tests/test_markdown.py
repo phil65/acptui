@@ -1,7 +1,5 @@
 """Markdown where ACP v2 allows it (descriptions, plan entries), plain text elsewhere."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import Command, ResourceLink, Skill

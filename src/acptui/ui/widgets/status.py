@@ -1,7 +1,5 @@
 """The status line: agent, session, activity, mode / model and context usage."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2.base import is_set

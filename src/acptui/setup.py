@@ -1,7 +1,5 @@
 """Building the session setup (MCP servers, system prompt, directories, options)."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import TYPE_CHECKING
 

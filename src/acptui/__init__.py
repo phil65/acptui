@@ -3,8 +3,6 @@
 Terminal UI for AI coding agents, built on ACP v2.
 """
 
-from __future__ import annotations
-
 from importlib.metadata import version
 
 __version__ = version("acptui")

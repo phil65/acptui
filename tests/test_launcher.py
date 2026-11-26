@@ -1,7 +1,5 @@
 """Pinned agents: the picker's quick-launch list (``pinned_agents``)."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from textual.widgets import Button, OptionList

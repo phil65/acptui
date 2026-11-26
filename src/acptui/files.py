@@ -12,8 +12,6 @@ any file) or ``@mount:path``. Nodes that aren't plain local files (a section, a
 function, a file on a mount) are read here and embedded into the prompt.
 """
 
-from __future__ import annotations
-
 import importlib.util
 from typing import TYPE_CHECKING, Any
 

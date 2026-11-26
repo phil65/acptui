@@ -5,8 +5,6 @@ shell command, the working directory and the time. The file is trimmed to
 :data:`MAX_ENTRIES` when it grows past twice that.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 import json
 import os

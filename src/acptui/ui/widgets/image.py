@@ -10,8 +10,6 @@ Images come from the block's ``data`` only; ACP v2 says clients should not fetch
 agent-supplied URI without user action, so ``uri`` is shown but never loaded.
 """
 
-from __future__ import annotations
-
 import base64
 import binascii
 import hashlib

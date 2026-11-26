@@ -4,8 +4,6 @@ Agent text is Markdown already and goes in as it is; plain-text fields (titles, 
 notices) are escaped; tool output and shell output go into code fences.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import Content as ToolContent, Diff, PlanItems, PlanMarkdown, TextContent

@@ -1,7 +1,5 @@
 """Elicitation: structured input the agent asks for, as a form (promptantic) or a URL to visit."""
 
-from __future__ import annotations
-
 import asyncio
 from typing import TYPE_CHECKING, Any, ClassVar
 import webbrowser

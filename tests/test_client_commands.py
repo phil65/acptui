@@ -1,7 +1,5 @@
 """acptui's own slash commands and the Markdown export."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from acptui.config import Settings

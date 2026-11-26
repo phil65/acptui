@@ -15,8 +15,6 @@ from an escape sequence) follows toad's shell (https://github.com/batrachianai/t
 ``src/toad/shell.py``), Copyright (c) Will McGugan, AGPL-3.0.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Callable
 import contextlib

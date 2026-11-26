@@ -5,8 +5,6 @@ section, source files by class / function). ``a`` mentions the highlighted node 
 the prompt; files the agent touched in this session are marked.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from rich.text import Text

@@ -1,7 +1,5 @@
 """Parsing git patches into files, hunks and lines."""
 
-from __future__ import annotations
-
 from acptui.protocol.diff import parse_patch, side_by_side
 
 

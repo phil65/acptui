@@ -1,7 +1,5 @@
 """The permission dialog: the agent's question, what it wants to do, and its options."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, ClassVar
 
 from aclientp.schema.v2 import (

@@ -6,8 +6,6 @@ they can and are written back to ``config.toml`` with its comments and layout ke
 (tomlkit); agents, MCP servers and the other tables are left as they are.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Literal, get_args
 

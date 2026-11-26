@@ -6,8 +6,6 @@ or terminal notification, as the ``[notifications]`` settings say. The terminal 
 names the session and is marked while an agent waits for the user.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 

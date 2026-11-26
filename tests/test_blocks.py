@@ -1,7 +1,5 @@
 """The block cursor: select a conversation block, copy it, save it, maximize it."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from acptui.config import Settings

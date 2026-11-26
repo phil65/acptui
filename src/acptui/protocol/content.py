@@ -1,7 +1,5 @@
 """Rendering v2 content blocks as Markdown, for every block kind."""
 
-from __future__ import annotations
-
 import base64
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING

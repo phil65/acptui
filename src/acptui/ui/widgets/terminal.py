@@ -1,7 +1,5 @@
 """Live view of an agent-owned terminal (v2 terminals are display-only)."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2.base import is_set

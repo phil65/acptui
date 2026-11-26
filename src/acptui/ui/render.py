@@ -1,7 +1,5 @@
 """Small rendering helpers: terminal output, pills, icons."""
 
-from __future__ import annotations
-
 from rich.text import Text
 from textual.content import Content
 

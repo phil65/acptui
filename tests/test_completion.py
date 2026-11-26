@@ -1,7 +1,5 @@
 """Prompt completion of commands and paths."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.schema.v2 import Command, Skill, TextCommandInput

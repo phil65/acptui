@@ -1,7 +1,5 @@
 """Every v2 client-facing method, notification and update kind, against the demo agent."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from aclientp.exceptions import RequestError

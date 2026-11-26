@@ -1,7 +1,5 @@
 """Conversation blocks: messages, thoughts, tool calls, plans and notices."""
 
-from __future__ import annotations
-
 import asyncio
 import json
 import re
@@ -22,6 +20,7 @@ from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.content import Content
+from textual.events import Click  # noqa: TC002
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Collapsible, Markdown, Static
@@ -49,7 +48,6 @@ if TYPE_CHECKING:
 
     from aclientp.schema.v2 import ContentBlock, ToolCallContent
     from textual.app import ComposeResult
-    from textual.events import Click
     from textual.widget import Widget
     from textual.widgets.markdown import MarkdownStream
 

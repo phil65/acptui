@@ -1,11 +1,10 @@
 """The prompt: a multi-line editor with ``/command`` and ``@path`` completion and history."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, ClassVar
 
 from textual.binding import Binding
 from textual.content import Content
+from textual.events import Key  # noqa: TC002
 from textual.message import Message
 from textual.widgets import OptionList, TextArea
 from textual.widgets.option_list import Option
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from aclientp.schema.v2 import AvailableCommand
-    from textual.events import Key
 
     from acptui.completion import CompletionContext
 

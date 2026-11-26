@@ -8,8 +8,6 @@ is hidden), and links are opened only when the user clicks them (see
 :func:`link_is_web`).
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from markdown_it import MarkdownIt

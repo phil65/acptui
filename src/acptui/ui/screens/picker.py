@@ -4,8 +4,6 @@ Pinned agents (``pinned_agents`` in the config; ``p`` here or in the details) co
 numbered: ``1``-``9`` start one at once (after toad's launcher, "show in launcher").
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -18,6 +16,7 @@ from textual.widgets import Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from acptui.config import command_spec, url_spec
+from acptui.recent import RecentSession  # noqa: TC001
 from acptui.ui.render import pill
 
 
@@ -27,7 +26,6 @@ if TYPE_CHECKING:
     from textual.app import ComposeResult
 
     from acptui.config import AgentSpec
-    from acptui.recent import RecentSession
 
 
 def with_probes(agents: list[AgentSpec]) -> list[AgentSpec]:

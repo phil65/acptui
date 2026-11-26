@@ -1,7 +1,5 @@
 """Command line interface: ``acptui``, ``acptui run``, ``acptui connect``, ``acptui agents``."""
 
-from __future__ import annotations
-
 import argparse
 import os
 from pathlib import Path

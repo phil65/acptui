@@ -1,7 +1,5 @@
 """Shared fixtures: a working directory, the demo agent, a v1-only agent."""
 
-from __future__ import annotations
-
 import sys
 from typing import TYPE_CHECKING
 

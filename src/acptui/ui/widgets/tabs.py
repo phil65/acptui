@@ -5,18 +5,13 @@ dialogs); the app keeps them (see :class:`~acptui.ui.app.AcpTui`). The bar is sh
 in every session screen (``tabs`` setting: always, when there are several, never).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from textual.content import Content
+from textual.events import Click  # noqa: TC002
 from textual.message import Message
 from textual.widgets import Static
-
-
-if TYPE_CHECKING:
-    from textual.events import Click
 
 
 TabState = Literal["starting", "idle", "working", "waiting", "disconnected"]

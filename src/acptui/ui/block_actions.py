@@ -6,8 +6,6 @@ conversation; ``c`` copies it, ``p`` puts it into the prompt, ``v`` saves it as 
 anything else the text it shows.
 """
 
-from __future__ import annotations
-
 import io
 from typing import TYPE_CHECKING
 

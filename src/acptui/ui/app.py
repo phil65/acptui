@@ -1,7 +1,5 @@
 """The Textual application."""
 
-from __future__ import annotations
-
 import datetime as dt
 from functools import partial
 import io
@@ -20,6 +18,7 @@ from textual.app import App
 from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.markup import escape
+from textual.widgets import Markdown  # noqa: TC002
 
 from acptui.config import command_spec, config_path, url_spec
 from acptui.history import History
@@ -60,7 +59,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
     from textual.screen import Screen
-    from textual.widgets import Markdown
 
     from acptui.config import AgentSpec, Settings
     from acptui.protocol.connection import SessionSetup

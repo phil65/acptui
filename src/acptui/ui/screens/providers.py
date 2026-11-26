@@ -1,7 +1,5 @@
 """LLM provider configuration (``providers/list``, ``providers/set``, ``providers/disable``)."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, ClassVar
 
 from aclientp.exceptions import RequestError

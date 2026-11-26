@@ -5,8 +5,6 @@ runs ``initialize`` once against the configured command (no session), shows what
 agent negotiated and remembers it (``agent_versions.json`` in the state directory).
 """
 
-from __future__ import annotations
-
 from dataclasses import asdict, dataclass
 import json
 import os
